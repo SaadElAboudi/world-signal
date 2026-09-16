@@ -1,0 +1,121 @@
+import { test, expect } from "@playwright/test";
+test("globe, evidence, filters, timeline and search work with explicit demo provenance", async ({
+  page,
+}, testInfo) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "What changed?" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "DEMO MODE" })).toBeVisible();
+  await expect(page.locator(".signal-card")).toHaveCount(10);
+  await expect(page.locator("canvas")).toBeVisible({ timeout: 60000 });
+  await expect(page.locator(".earth-loading")).toHaveCount(0, {
+    timeout: 60000,
+  });
+  await page.screenshot({
+    path: `test-results/${testInfo.project.name}-overview.png`,
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "View Iran signal:" }).click();
+  await expect(
+    page.getByRole("region", { name: "Signal details" }),
+  ).toBeVisible();
+  await expect(page.locator(".big-measure")).toContainText("−38%");
+  await expect(
+    page.getByRole("img", { name: /30 synthetic reference/ }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Why this may matter" }).click();
+  await expect(
+    page.getByText("EDITORIAL CONTEXT · NOT AI GENERATED"),
+  ).toBeVisible();
+  await page.getByText("Methodology & limitations").click();
+  await expect(
+    page.getByText(/Source links describe intended providers/),
+  ).toBeVisible();
+  await page.screenshot({
+    path: `test-results/${testInfo.project.name}-detail.png`,
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Close signal details" }).click();
+  await page.getByRole("button", { name: /^Earthquakes/ }).click();
+  await expect(page.locator(".signal-card")).toHaveCount(7);
+  await page.getByRole("button", { name: "1H", exact: true }).click();
+  await expect(page.locator(".signal-card")).toHaveCount(2);
+  await page.getByRole("button", { name: /^Earthquakes/ }).click();
+  await expect(page.locator(".signal-card")).toHaveCount(3);
+  await page.getByRole("button", { name: "30D", exact: true }).click();
+  await expect(page.locator(".signal-card")).toHaveCount(14);
+  const search = page.getByRole("textbox", { name: "Search demo signals" });
+  await search.fill("Japan");
+  await expect(page.locator(".signal-card")).toHaveCount(1);
+  await search.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "Japan", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Close signal details" }).click();
+  await search.fill("no such place");
+  await expect(page.getByText("No matching signals")).toBeVisible();
+  await page.getByRole("button", { name: "Reset filters" }).click();
+  await page.getByRole("button", { name: "24H", exact: true }).click();
+  await page.getByRole("button", { name: "Play demo replay" }).click();
+  await expect(
+    page.getByRole("button", { name: "Pause replay" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("slider", { name: "Demo replay position" }),
+  ).not.toHaveValue("100");
+  await page.getByRole("button", { name: "Pause replay" }).click();
+  await page.getByRole("button", { name: "SNAPSHOT", exact: true }).click();
+  await expect(page.locator(".signal-card")).toHaveCount(10);
+  await page.getByRole("button", { name: "DEMO MODE" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(
+    page.getByText("You are exploring a demonstration."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Explore the signals" }).click();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  expect(errors).toEqual([]);
+});
+test("API declares synthetic origin and does not claim live provider connections", async ({
+  request,
+}) => {
+  const response = await request.get("/api/signals");
+  expect(response.ok()).toBe(true);
+  const body = await response.json();
+  expect(body.mode).toBe("demo");
+  expect(body.signals).toHaveLength(14);
+  expect(
+    body.signals.every(
+      (s: { provenance: string }) => s.provenance === "synthetic",
+    ),
+  ).toBe(true);
+  expect(
+    body.providers.every((p: { status: string }) => p.status === "demo"),
+  ).toBe(true);
+});
+
+test("reduced motion and replay dates stay truthful", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Rotate globe" })).toBeDisabled(
+    { timeout: 60000 },
+  );
+  const slider = page.getByRole("slider", { name: "Demo replay position" });
+  await slider.focus();
+  await slider.press("Home");
+  await expect(slider).toHaveValue("0");
+  await expect(page.locator(".map-meta")).toContainText("15 SEPT 2026");
+  await page.getByRole("button", { name: "SNAPSHOT", exact: true }).click();
+  await expect(page.locator(".map-meta")).toContainText("16 SEPT 2026");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+});
