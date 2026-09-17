@@ -20,7 +20,8 @@
     "worker": "tsx scripts/worker.ts",
     "db:seed": "tsx scripts/seed.ts",
     "backfill:firms": "tsx scripts/backfill-firms.ts",
-    "test:db": "tsx --test tests/database.integration.ts"
+    "test:db": "tsx --test tests/database.integration.ts",
+    "db:check": "tsx scripts/check-db.ts"
   },
   "dependencies": {
     "@turf/boolean-point-in-polygon": "^7.4.0",
