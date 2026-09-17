@@ -1,3 +1,5 @@
+> Historical Phase 1 design notes. For the implemented live pipeline, see [Phase 2 data architecture](data-architecture.md).
+
 # Architecture decisions
 
 ## Scope: a complete first experience

@@ -1,15 +1,22 @@
-# Phase 1 validation
+# Phase 2 validation
 
-Verified locally on 16 September 2026:
+Verified locally on 17 September 2026:
 
-- Production build and TypeScript: passed.
-- ESLint and Git whitespace checks: passed.
-- Seven unit tests: ratio and percentage arithmetic, population z-scores, unknown/degenerate baselines, severity boundaries, replay chronology, combined filters and demo provenance.
-- Nine Playwright cases: three each at desktop (1440 × 1000), tablet (768 × 1024) and mobile (390 × 844) viewport sizes. All passed.
-- Browser journeys cover WebGL initialization, explicit demo labels, signal details, evidence and methodology, layer/time filters, search and empty states, replay controls, the information dialog, reduced-motion preferences and replay dates.
-- Browser tests assert no uncaught page errors in the main journey and no horizontal document overflow. Screenshots were manually reviewed at all three viewport sizes.
-- Production dependency audit: no known vulnerabilities reported at validation time.
+- 19 unit tests pass: normalization, stable identities, null/invalid inputs, baselines, ratios, population z-scores, coverage gaps, clustering, confidence, thresholds, filters, freshness, retries and missing credentials.
+- Seven integration tests pass against a real isolated PostgreSQL database: migrations, idempotent inserts/revisions, locking, malformed-batch rollback, two-provider analysis/evidence, actual API handlers/filtering, partial failures and database outage without synthetic fallback.
+- Twelve Playwright cases pass across desktop, tablet and mobile (8.6 minutes locally). These preserve the demo journeys and exercise live provenance, N/A event references, provisional fire references, partial provider failure and delayed refresh. Live browser state tests use intercepted deterministic responses, not upstream APIs.
+- TypeScript/production build and ESLint pass.
+- Real upstream ingestion was separately exercised against USGS monthly/daily GeoJSON and NASA's public seven-day NOAA-20 CSV. Initial storage included 11,084 earthquake observations and 549,548 thermal detections; subsequent scheduled collections update these counts.
+- A live HTTP snapshot returned 200 with both healthy providers, 14 selected earthquake events and 237 geographic fire anomalies. These are a dated local validation snapshot, not promised future counts. Detail endpoints exposed real observation IDs, source URLs and calculation evidence. No seismic count cluster met the configured rules at this snapshot.
+- FIRMS references currently contain five to six fully covered daily windows and are explicitly provisional, with LOW confidence. No full 30-day history, seasonal model or verified wildfire incident count is claimed.
+- The authenticated NASA API/backfill path requires a user key and has not been tested against the real authenticated service. Public no-key ingestion was verified.
 
-The local machine uses macOS 12. The latest Playwright browser installer does not support this OS, so tests used an already installed Chromium 149 executable through `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`, with software WebGL. The full browser suite took 8.3 minutes. These tests establish functional behavior in emulated Chromium viewports, not measured frame rates or tests on physical iOS/Android devices.
+The local machine uses macOS 12, so browser tests used an existing Chromium 149 binary via `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` and software WebGL. These are emulated viewport checks, not physical-device tests or frame-rate benchmarks. PostgreSQL runs locally through the development helper; no production cloud deployment, backups or operational SLA are claimed.
 
-CI repeats lint, unit tests, production build and browser journeys on Linux. Runtime source integration, provider freshness, stored historical baselines and AI behavior are outside this release and have not been claimed or tested.
+CI runs lint, unit tests, PostgreSQL integration tests, production build and browser tests without depending on live feeds. Credentials, database contents and runtime logs are ignored by Git.
+
+A final real-data browser check displayed 236 current signals with both providers healthy, no uncaught browser errors and no horizontal overflow. The live screenshot in the README records this later snapshot; changing counts reflect ongoing ingestion.
+
+## Previous release
+
+Phase 1 passed seven unit tests and nine browser cases on 16 September 2026. It contained only visibly synthetic scenarios. Those demo behaviors remain covered by the Phase 2 suite.

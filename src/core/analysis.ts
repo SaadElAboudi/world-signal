@@ -46,7 +46,14 @@ export function classify(
         ? "notable"
         : null;
 }
+export function confidenceLabel(value: number) {
+  return value >= 0.8 ? "HIGH" : value >= 0.6 ? "MEDIUM" : "LOW";
+}
 export function deviationLabel(signal: WorldSignal) {
+  if (signal.kind === "earthquake-event")
+    return signal.magnitude === undefined
+      ? "Threshold"
+      : `M${signal.magnitude.toFixed(1)}`;
   const v = signal.deviation;
   if (v === null) return "Insufficient history";
   return signal.deviationType === "ratio"

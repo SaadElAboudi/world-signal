@@ -2,9 +2,9 @@
 
 **What changed?** A globe-first observatory for unusual activity across independent real-world systems.
 
-This release delivers **Phase 1: the interactive visual prototype**. All 14 scenarios and their 30-day reference samples are deterministic, synthetic and visibly labeled. **No real-time data provider is connected.** Source links are provider references, not corroboration of simulated events.
+Phase 2 connects **USGS earthquakes and NASA FIRMS fire detections** to PostgreSQL, deterministic anomaly analysis and the existing interactive globe. Live observations and the explicitly labeled synthetic demo remain separate. No AI-generated analysis is used.
 
-![WORLD SIGNAL demonstration interface](docs/preview.png)
+![WORLD SIGNAL live interface — real USGS and NASA FIRMS data](docs/live-preview.png)
 
 ## Run locally
 
@@ -12,59 +12,67 @@ Node.js 20.9+ and npm are required.
 
 ```sh
 npm ci
+npm run db:local
+```
+
+Keep that terminal open. This initializes a real, isolated PostgreSQL cluster on loopback port 55432, creates the development/test databases and writes local credentials to ignored `.env.local`. The database persists under ignored `.data/`; stop it with Ctrl+C. The helper uses platform-specific PostgreSQL binaries and is intended for development.
+
+In a second terminal:
+
+```sh
+npm run db:migrate
+npm run db:seed
+npm run ingest:all -- --history
 npm run dev
 ```
 
-Open http://localhost:3000. No API keys, accounts, database or external runtime map requests are required. Fonts are downloaded during the first Next.js build and then served locally. Globe geometry and texture are bundled in `public/geo`.
+Open http://localhost:3000/?mode=live. Initial ingestion downloads the USGS monthly feed and NASA's seven-day NOAA-20 feed; allow several minutes and sufficient disk space for hundreds of thousands of observations. `db:seed` registers providers only; it never inserts simulated observations.
+
+In a third terminal, keep the scheduler running:
 
 ```sh
+npm run worker
+```
+
+USGS is collected every five minutes, FIRMS every hour, history refreshed daily, and signals recomputed every five minutes. The page polls the stored API every minute; **CURRENT** requests a refresh.
+
+For an existing PostgreSQL service, copy `.env.example` to `.env.local`, set `DATABASE_URL` and `WORLD_SIGNAL_MODE=live`, then migrate, seed, ingest and run the worker. Do not commit credentials. Production requires persistent PostgreSQL and a separate long-running worker; the Next.js web process does not perform ingestion on page requests.
+
+## Sources and limits
+
+- [USGS GeoJSON feeds](https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php): individual events selected by configurable magnitude/significance/depth rules, plus regional count anomalies when adequate coverage exists.
+- [NASA FIRMS active-fire downloads](https://firms.modaps.eosdis.nasa.gov/active_fire/): public NOAA-20 VIIRS CSV, without a key. Detections are aggregated into H3 geographic cells and compared with covered historical windows. A detection is not a confirmed incident or burned-area estimate.
+- Public FIRMS history starts with seven days, currently yielding five to six usable reference windows. The UI reports the actual reference count and marks short histories **provisional**. A 30-day reference becomes available as ingestion accumulates coverage; missing days are never invented.
+- Optional authenticated backfill: set `FIRMS_TRANSPORT=api` and `NASA_FIRMS_API_KEY`, then run `npm run backfill:firms`. This requests 31 days in bounded batches, subject to NASA availability and account limits. The authenticated upstream path has not been exercised with a real key in this release.
+- Confidence describes data quality and reference support, not the probability of an incident. Internet and aviation remain disabled in live mode. Live historical filters query persisted signals; continuous historical replay remains demo-only.
+
+Provider outages expose unavailable, partial or delayed states. Last collected/observed times and errors are available in the status dialog and API. A live failure never substitutes demo data.
+
+## API
+
+- `GET /api/signals?mode=live&type=earthquake,wildfire&limit=250`
+- `GET /api/signals/:id?mode=live`
+- `GET /api/providers/status`
+
+Signal filters: `type`, exact `severity` (`notable`, `elevated`, `significant`), ISO `since`/`until` (maximum 31-day interval), `bbox=west,south,east,north` (antimeridian supported), `q`, exact `country`, `includeResolved=true`, `limit` (1–500), and `offset`. Responses include mode, freshness, provider health, total and truncation information. Invalid filters return 400, unknown details 404, and unavailable storage 503. Requests query persisted results, never raw upstream feeds.
+
+Use `/?mode=demo` or `WORLD_SIGNAL_MODE=demo` for the 14 deterministic synthetic scenarios. Demo mode works without a database. `?mode=live` never falls back to those scenarios.
+
+## Operations and validation
+
+```sh
+npm run ingest:usgs -- --history
+npm run ingest:firms -- --history
+npm run signals:compute
+npm test
+npm run test:db
 npm run lint
 npm run typecheck
-npm test
 npm run build
 npx playwright install chromium
 npm run test:e2e
 ```
 
-Browser tests start a production server on port 3012 and exercise desktop, tablet and mobile layouts. Test screenshots and traces are in the ignored `test-results/` directory.
+Database tests require an isolated database whose name ends in `_test`. The local helper creates it automatically; alternatively set `TEST_DATABASE_URL`. **Tests truncate that dedicated test database.** Browser tests start a production web server on port 3012 and cover desktop, tablet and mobile. On older macOS, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to an installed compatible Chromium binary.
 
-## Included
-
-- Lazy-loaded WebGL globe: drag, zoom, reset, optional rotation, animated severity markers, country selection and smooth signal focus.
-- Four independent layer toggles, severity filter, chronological feed and empty states.
-- Signal detail: observed value, reference mean, calculated deviation, chart, methodology, limitations, timestamp and provider reference.
-- 1h / 6h / 24h / 7d / 30d windows and a replay scrubber anchored to **2026-09-16 21:43 UTC**. This is a demo timeline, not a historical archive.
-- Place / type / event substring search over the demo dataset. Press `/` to search, Enter to focus the first result and Escape to close details.
-- Country dimensions show demo coverage independently. Missing data is never labeled normal.
-- Responsive layouts, keyboard-operable feed and controls, reduced-motion handling and a feed fallback if WebGL cannot initialize.
-- Pure baseline and classification functions, typed provider contract, server-rendered snapshot and `GET /api/signals`.
-
-## Trust model
-
-`provenance` belongs to each signal; `mode` belongs to the snapshot. A future provider failure must expose an unavailable/stale status, never silently substitute synthetic data into a live response. Demo confidence is low for real-world conclusions. Context is editorial, not LLM output. The chart distinguishes reference samples from the current observation; its dashed connector is not measured history.
-
-Synthetic scenarios do not establish an actual incident, impact or cause. Sample baselines do not model seasonality, satellite coverage, telemetry completeness or reporting delays.
-
-## Structure
-
-```
-src/app/                    Next.js shell and snapshot API
-src/components/             Globe, dashboard, evidence chart, signal details
-src/core/types.ts           Normalized signals and provider contract
-src/core/analysis.ts        Baselines, configurable thresholds, filtering
-src/providers/demo.ts       Deterministic and labeled demo snapshot
-public/geo/                 Self-hosted map assets
-tests/                     Statistical invariants and browser journeys
-docs/architecture.md       Decisions, limitations and next phases
-```
-
-## Next phases
-
-1. USGS and NASA FIRMS adapters with provenance, validation, caching and explicit failure states.
-2. PostgreSQL observations and ingestion runs; historical aggregation, coverage checks and provider-specific baselines.
-3. Internet and aggregated aviation providers, subject to available credentials and usage terms.
-4. Evidence-constrained AI briefs, query interpretation and cross-layer correlation. Correlation must not imply causation.
-
-See [architecture](docs/architecture.md) and [asset credits](docs/credits.md).
-
-On older macOS versions unsupported by the bundled browser, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to an existing compatible Chromium executable when running browser tests.
+See [data architecture and statistical methodology](docs/data-architecture.md), [validation evidence](docs/validation.md), [Phase 1 design decisions](docs/architecture.md), and [asset credits](docs/credits.md).

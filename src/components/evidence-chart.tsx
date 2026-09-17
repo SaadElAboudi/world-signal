@@ -3,13 +3,27 @@ export function EvidenceChart({ signal }: { signal: WorldSignal }) {
   const width = 320,
     height = 125,
     pad = 14;
+  if (signal.expectedValue === null || !signal.baseline.length)
+    return (
+      <div className="context-note">
+        <p>
+          {signal.kind === "earthquake-event"
+            ? "This event crossed a documented selection threshold. No historical baseline or statistical deviation is claimed."
+            : "Insufficient historical data for a baseline comparison."}
+        </p>
+      </div>
+    );
   const values = [...signal.baseline.map((p) => p.value), signal.observedValue];
-  const max = Math.max(...values) * 1.18;
+  const max = Math.max(1, ...values) * 1.18;
   const y = (value: number) =>
     height - pad - (value / max) * (height - pad * 2);
   const points = signal.baseline
-    .map((p, i) => `${pad + (i / 29) * 237},${y(p.value)}`)
+    .map(
+      (p, i) =>
+        `${pad + (i / Math.max(1, signal.baseline.length - 1)) * 237},${y(p.value)}`,
+    )
     .join(" ");
+  const synthetic = signal.provenance === "synthetic";
   return (
     <div className="evidence-chart">
       <div className="chart-key">
@@ -25,7 +39,7 @@ export function EvidenceChart({ signal }: { signal: WorldSignal }) {
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`30 synthetic reference samples averaging ${signal.expectedValue.toFixed(0)}, compared with a current observation of ${signal.observedValue} ${signal.unit}`}
+        aria-label={`${signal.baseline.length} ${synthetic ? "synthetic" : "observed"} reference samples averaging ${signal.expectedValue.toFixed(2)}, compared with a current observation of ${signal.observedValue} ${signal.unit}`}
       >
         {[0.25, 0.5, 0.75].map((p) => (
           <line
@@ -55,7 +69,7 @@ export function EvidenceChart({ signal }: { signal: WorldSignal }) {
         <line
           x1="250"
           x2="295"
-          y1={y(values[29])}
+          y1={y(values[values.length - 2])}
           y2={y(signal.observedValue)}
           stroke="#5be0b3"
           strokeDasharray="3 3"
@@ -63,12 +77,17 @@ export function EvidenceChart({ signal }: { signal: WorldSignal }) {
         <circle cx="295" cy={y(signal.observedValue)} r="4" fill="#5be0b3" />
       </svg>
       <div className="chart-axis">
-        <span>−30 DAYS</span>
-        <span>−1 DAY</span>
-        <span>NOW</span>
+        <span>
+          {synthetic
+            ? "−30 DAYS"
+            : `${signal.baseline.length} REFERENCE WINDOWS`}
+        </span>
+        <span>REFERENCE END</span>
+        <span>CURRENT</span>
       </div>
       <p className="fineprint">
-        Daily reference samples; dashed segment is not measured history.
+        {synthetic ? "Daily" : `${signal.evidence?.baselineWindowHours}-hour`}{" "}
+        reference samples; dashed segment is not measured history.
       </p>
     </div>
   );

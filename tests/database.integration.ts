@@ -1,0 +1,254 @@
+import "../scripts/env";
+import test, { before, after } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { migrate } from "../scripts/migrate";
+import { getPool, closePool } from "../src/database/client";
+import { ingest } from "../src/server/ingestion";
+import { computeSignals } from "../src/server/compute";
+import { getSnapshot, clearSnapshotCache } from "../src/server/snapshot";
+import { UsgsProvider } from "../src/providers/usgs";
+import { geographicCell } from "../src/signals/geography";
+import type {
+  ObservationProvider,
+  NormalizedBatch,
+  RawBatch,
+  Observation,
+} from "../src/providers/contract";
+import { GET as signalsGet } from "../src/app/api/signals/route";
+import { GET as signalGet } from "../src/app/api/signals/[id]/route";
+import { DataError } from "../src/server/log";
+const liveUrl = process.env.DATABASE_URL;
+let testUrl = process.env.TEST_DATABASE_URL;
+if (!testUrl && liveUrl) {
+  const url = new URL(liveUrl);
+  if (["127.0.0.1", "localhost"].includes(url.hostname)) {
+    url.pathname = "/world_signal_test";
+    testUrl = url.toString();
+  }
+}
+if (!testUrl || !new URL(testUrl).pathname.endsWith("_test"))
+  throw new Error(
+    "TEST_DATABASE_URL must name a dedicated database ending in _test. Refusing to modify another database.",
+  );
+process.env.DATABASE_URL = testUrl;
+process.env.WORLD_SIGNAL_MODE = "live";
+const now = new Date("2026-09-17T02:00:00.000Z");
+const raw: RawBatch<unknown> = {
+  data: JSON.parse(readFileSync("tests/fixtures/usgs.json", "utf8")),
+  fetchedAt: now.toISOString(),
+  sourceAsOf: now.toISOString(),
+  coverageStart: new Date(now.getTime() - 30 * 86400000).toISOString(),
+  coverageEnd: now.toISOString(),
+  sourceUrl: "https://example.test/fixture",
+};
+const baseProvider = new UsgsProvider();
+const fixtureProvider: ObservationProvider = {
+  id: "usgs",
+  name: "Fixture USGS",
+  type: "earthquake",
+  fetchRawData: async () => structuredClone(raw),
+  normalize: (batch) => baseProvider.normalize(batch),
+};
+before(async () => {
+  await migrate();
+  await getPool().query(
+    "TRUNCATE signal_evidence,signals,observations,provider_runs RESTART IDENTITY CASCADE",
+  );
+});
+after(async () => {
+  await closePool();
+});
+test("ingestion is idempotent and source revisions update existing observations", async () => {
+  const first = await ingest(fixtureProvider, true, now);
+  assert.equal(first.status, "success");
+  assert.ok("inserted" in first && first.inserted === 2);
+  const second = await ingest(fixtureProvider, true, now);
+  assert.ok(
+    "inserted" in second && second.inserted === 0 && second.updated === 0,
+  );
+  const revised = structuredClone(raw) as RawBatch<{
+    features: { properties: { mag: number; updated: number } }[];
+  }>;
+  revised.data.features[0].properties.mag = 6.1;
+  revised.data.features[0].properties.updated += 1000;
+  const changed = await ingest(
+    { ...fixtureProvider, fetchRawData: async () => revised },
+    true,
+    now,
+  );
+  assert.ok("updated" in changed && changed.updated === 1);
+  assert.equal(
+    Number(
+      (await getPool().query("SELECT count(*) FROM observations")).rows[0]
+        .count,
+    ),
+    2,
+  );
+});
+test("provider lock prevents duplicate concurrent workers", async () => {
+  const client = await getPool().connect();
+  await client.query(
+    "SELECT pg_advisory_lock(hashtext('world-signal:ingest:usgs'))",
+  );
+  try {
+    assert.equal((await ingest(fixtureProvider, true, now)).status, "skipped");
+  } finally {
+    await client.query(
+      "SELECT pg_advisory_unlock(hashtext('world-signal:ingest:usgs'))",
+    );
+    client.release();
+  }
+});
+test("malformed ingestion does not mutate stored observations or create false coverage", async () => {
+  const failed = await ingest(
+    {
+      ...fixtureProvider,
+      normalize: (batch) => ({ ...baseProvider.normalize(batch), rejected: 1 }),
+    },
+    true,
+    now,
+  );
+  assert.equal(failed.status, "failed");
+  const rows = await getPool().query(
+    "SELECT status,coverage_start FROM provider_runs ORDER BY id DESC LIMIT 1",
+  );
+  assert.equal(rows.rows[0].status, "failed");
+  assert.equal(rows.rows[0].coverage_start, null);
+  assert.equal(
+    Number(
+      (await getPool().query("SELECT count(*) FROM observations")).rows[0]
+        .count,
+    ),
+    2,
+  );
+});
+test("PostgreSQL aggregation and anomaly recomputation produce independently traceable categories", async () => {
+  await ingest(fixtureProvider, true, now);
+  const end = Math.floor((now.getTime() - 3 * 3600000) / 3600000) * 3600000;
+  const observations: Observation[] = [];
+  for (let bucket = 0; bucket <= 6; bucket++)
+    for (let i = 0; i < (bucket === 0 ? 80 : 10); i++) {
+      const id = `fixture-fire-${bucket}-${i}`;
+      observations.push({
+        id,
+        upstreamId: id,
+        provider: "firms",
+        type: "wildfire",
+        latitude: -5.5,
+        longitude: -57,
+        timestamp: new Date(
+          end - bucket * 86400000 - 1000 - i * 1000,
+        ).toISOString(),
+        sourceUpdatedAt: now.toISOString(),
+        value: 2,
+        cellId: geographicCell(-5.5, -57, "wildfire"),
+        quality: 1,
+        sourceUrl: "https://example.test/fixture",
+        properties: { confidence: "h" },
+        active: true,
+      });
+    }
+  const batch: NormalizedBatch = {
+    observations,
+    received: observations.length,
+    rejected: 0,
+    sourceAsOf: now.toISOString(),
+    coverageStart: new Date(now.getTime() - 8 * 86400000).toISOString(),
+    coverageEnd: now.toISOString(),
+  };
+  await ingest(
+    {
+      id: "firms",
+      name: "Fixture FIRMS",
+      type: "wildfire",
+      fetchRawData: async () => ({ ...raw, data: null }),
+      normalize: () => batch,
+    },
+    true,
+    now,
+  );
+  assert.equal((await computeSignals(now)).status, "success");
+  const snapshot = await getSnapshot(new URLSearchParams("mode=live"), now);
+  assert.equal(snapshot.mode, "live");
+  assert.equal(snapshot.status, "live");
+  assert.ok(snapshot.signals.some((s) => s.type === "earthquake"));
+  const fire = snapshot.signals.find((s) => s.type === "wildfire")!;
+  assert.equal(fire.observedValue, 80);
+  assert.ok(fire.expectedValue !== null && fire.expectedValue > 0);
+  assert.ok(fire.evidence!.observationIds.length <= 20);
+  assert.ok(fire.provenance === "observed");
+  assert.ok(
+    Number(
+      (await getPool().query("SELECT count(*) FROM signal_evidence")).rows[0]
+        .count,
+    ) > 0,
+  );
+});
+test("real API filtering, detail routes and invalid-query errors work against PostgreSQL", async () => {
+  const query =
+    "mode=live&type=wildfire&since=2026-09-16T00:00:00Z&until=2026-09-17T02:00:00Z&bbox=-60,-10,-50,0";
+  const response = await signalsGet(
+    new Request(`http://localhost/api/signals?${query}`),
+  );
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.signals.length, 1);
+  assert.equal(data.signals[0].type, "wildfire");
+  const detail = await signalGet(
+    new Request("http://localhost/api/signals/x?mode=live"),
+    { params: Promise.resolve({ id: data.signals[0].id }) },
+  );
+  assert.equal(detail.status, 200);
+  assert.ok((await detail.json()).evidence);
+  assert.equal(
+    (
+      await signalsGet(
+        new Request("http://localhost/api/signals?mode=live&bbox=bad"),
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await signalGet(new Request("http://localhost/api/signals/x?mode=live"), {
+        params: Promise.resolve({ id: "missing" }),
+      })
+    ).status,
+    404,
+  );
+});
+test("one provider failure does not erase the other provider or insert demo signals", async () => {
+  await ingest(
+    {
+      ...fixtureProvider,
+      fetchRawData: async () => {
+        throw new DataError("network_or_timeout");
+      },
+    },
+    false,
+    now,
+  );
+  clearSnapshotCache();
+  const snapshot = await getSnapshot(new URLSearchParams("mode=live"), now);
+  assert.equal(snapshot.status, "partial");
+  assert.ok(snapshot.signals.some((s) => s.type === "wildfire"));
+  assert.ok(snapshot.signals.every((s) => s.provenance === "observed"));
+});
+test("database interruption returns unavailable live state while demo remains functional", async () => {
+  await closePool();
+  process.env.DATABASE_URL =
+    "postgresql://invalid:invalid@127.0.0.1:1/world_signal_test";
+  clearSnapshotCache();
+  try {
+    const live = await getSnapshot(new URLSearchParams("mode=live"), now);
+    assert.equal(live.status, "unavailable");
+    assert.equal(live.signals.length, 0);
+    const demo = await getSnapshot(new URLSearchParams("mode=demo"), now);
+    assert.equal(demo.mode, "demo");
+    assert.equal(demo.signals.length, 14);
+  } finally {
+    await closePool();
+    process.env.DATABASE_URL = testUrl;
+  }
+});

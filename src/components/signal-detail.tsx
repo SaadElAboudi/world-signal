@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { LAYERS, type WorldSignal } from "@/core/types";
-import { deviationLabel } from "@/core/analysis";
+import { confidenceLabel, deviationLabel } from "@/core/analysis";
 import { EvidenceChart } from "./evidence-chart";
 import { Icon } from "./icon";
 export function SignalDetail({
@@ -12,6 +12,8 @@ export function SignalDetail({
   onClose: () => void;
 }) {
   const [showContext, setShowContext] = useState(false);
+  const demo = signal.provenance === "synthetic";
+  const event = signal.kind === "earthquake-event";
   return (
     <section className="signal-detail" aria-label="Signal details">
       <div className="panel-heading">
@@ -28,7 +30,13 @@ export function SignalDetail({
         <div className="detail-type">
           <Icon name={signal.type} />
           {LAYERS.find((l) => l.id === signal.type)?.name}
-          <span className="demo-mini">SIMULATED</span>
+          <span className="demo-mini">
+            {demo
+              ? "SIMULATED"
+              : event
+                ? "OBSERVED EVENT"
+                : "STATISTICAL ANOMALY"}
+          </span>
         </div>
         <h2>
           {signal.country === "United States of America"
@@ -42,27 +50,40 @@ export function SignalDetail({
         </span>
         <div className="big-measure">
           {deviationLabel(signal)}
-          <span>vs. 30-day reference</span>
+          <span>{signal.baselineLabel ?? "vs. 30-day reference"}</span>
         </div>
         <div className="metric-pair">
           <div>
-            <span>OBSERVED · DEMO</span>
+            <span>{demo ? "OBSERVED · DEMO" : "OBSERVED"}</span>
             <strong>{signal.observedValue.toLocaleString("en-US")}</strong>
             <small>{signal.unit}</small>
           </div>
           <div>
-            <span>EXPECTED · DEMO</span>
-            <strong>{signal.expectedValue.toFixed(0)}</strong>
-            <small>reference mean</small>
+            <span>{demo ? "EXPECTED · DEMO" : "REFERENCE MEAN"}</span>
+            <strong>
+              {signal.expectedValue === null
+                ? "N/A"
+                : signal.expectedValue.toFixed(demo ? 0 : 2)}
+            </strong>
+            <small>
+              {signal.expectedValue === null
+                ? "event threshold"
+                : "per comparable window"}
+            </small>
           </div>
         </div>
-        {signal.magnitude && (
+        {signal.magnitude !== undefined && (
           <div className="quake-meta">
             <span>
               Magnitude <b>{signal.magnitude.toFixed(1)}</b>
             </span>
             <span>
-              Depth <b>{signal.depth} km</b>
+              Depth{" "}
+              <b>
+                {signal.depth === undefined
+                  ? "Unavailable"
+                  : `${signal.depth} km`}
+              </b>
             </span>
           </div>
         )}
@@ -73,7 +94,13 @@ export function SignalDetail({
         <div className="detail-section">
           <div className="section-title">
             <h3>The evidence</h3>
-            <span>30D REFERENCE</span>
+            <span>
+              {demo
+                ? "30D REFERENCE"
+                : event
+                  ? "THRESHOLD SELECTION"
+                  : `${signal.baseline.length} REFERENCE WINDOWS`}
+            </span>
           </div>
           <EvidenceChart signal={signal} />
         </div>
@@ -91,9 +118,40 @@ export function SignalDetail({
             <span>EDITORIAL CONTEXT · NOT AI GENERATED</span>
             <p>{signal.context}</p>
             <p>
-              Confidence in real-world conclusions: <b>LOW</b>. This scenario is
-              synthetic; no cause has been established.
+              {demo
+                ? "Synthetic scenario; no real-world conclusion is established."
+                : "No causal or impact conclusion is established by these measurements."}
             </p>
+          </div>
+        )}
+        {!demo && (
+          <div className="detail-section source-section">
+            <h3>Data confidence · {confidenceLabel(signal.confidence)}</h3>
+            <p>{signal.evidence?.confidenceMethod}</p>
+            <p>
+              Status: {signal.status ?? "active"}. Confidence describes data
+              quality, not danger.
+            </p>
+          </div>
+        )}
+        {!demo && signal.evidence && (
+          <div className="detail-section source-section">
+            <h3>Observation window</h3>
+            <p>
+              {event
+                ? "Individual catalogue event"
+                : `${signal.evidence.observationWindowHours} hours ending ${new Date(signal.evidence.windowEnd).toLocaleString("en-GB", { timeZone: "UTC" })} UTC`}
+            </p>
+            {signal.evidence.frpMw !== undefined && (
+              <p>
+                FRP sum:{" "}
+                {signal.evidence.frpMw === null
+                  ? "Unavailable"
+                  : `${signal.evidence.frpMw.toFixed(1)} MW across ${signal.evidence.frpSampleCount} detections`}
+                . Repeated overpasses are included; this is not total fire
+                energy.
+              </p>
+            )}
           </div>
         )}
         <details className="method-details">
@@ -102,15 +160,19 @@ export function SignalDetail({
           <p>{signal.limitation}</p>
         </details>
         <div className="detail-section source-section">
-          <h3>Reference source</h3>
+          <h3>{demo ? "Reference source" : "Original data source"}</h3>
           <a href={signal.source.url} target="_blank" rel="noreferrer">
             {signal.source.name}
             <Icon name="external" size={14} />
           </a>
-          <p>Provider documentation, not evidence of a real event.</p>
+          <p>
+            {demo
+              ? "Provider documentation, not evidence of a real event."
+              : `Source updated: ${signal.sourceAsOf ? new Date(signal.sourceAsOf).toLocaleString("en-GB", { timeZone: "UTC" }) + " UTC" : "Unavailable"}`}
+          </p>
         </div>
         <div className="timestamp">
-          <span>SCENARIO TIMESTAMP</span>
+          <span>{demo ? "SCENARIO TIMESTAMP" : "LAST OBSERVATION"}</span>
           <time dateTime={signal.timestamp}>
             {new Date(signal.timestamp).toLocaleString("en-GB", {
               timeZone: "UTC",

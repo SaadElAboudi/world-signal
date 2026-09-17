@@ -1,6 +1,6 @@
 {
   "name": "world-signal",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -10,21 +10,38 @@
     "test": "tsx --test tests/*.test.ts",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
-    "format": "prettier --write src tests docs README.md playwright.config.ts"
+    "format": "prettier --write src tests docs README.md playwright.config.ts",
+    "db:local": "tsx scripts/db-local.ts",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "ingest:usgs": "tsx scripts/ingest.ts usgs",
+    "ingest:firms": "tsx scripts/ingest.ts firms",
+    "ingest:all": "tsx scripts/ingest.ts all",
+    "signals:compute": "tsx scripts/compute.ts",
+    "worker": "tsx scripts/worker.ts",
+    "db:seed": "tsx scripts/seed.ts",
+    "backfill:firms": "tsx scripts/backfill-firms.ts",
+    "test:db": "tsx --test tests/database.integration.ts"
   },
   "dependencies": {
+    "@turf/boolean-point-in-polygon": "^7.4.0",
+    "csv-parse": "^7.0.2",
+    "h3-js": "^4.5.0",
     "next": "16.3.5",
+    "pg": "^8.23.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-globe.gl": "^2.38.0",
-    "three": "^0.186.0"
+    "three": "^0.186.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/three": "^0.186.0",
+    "embedded-postgres": "^18.4.0-beta.17",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
     "prettier": "^3.9.7",

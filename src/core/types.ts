@@ -1,6 +1,6 @@
 export type SignalType = "earthquake" | "wildfire" | "internet" | "aviation";
 export type Severity = "notable" | "elevated" | "significant";
-export type DeviationType = "percentage" | "ratio" | "zscore";
+export type DeviationType = "percentage" | "ratio" | "zscore" | "absolute";
 export interface EvidencePoint {
   timestamp: string;
   value: number;
@@ -15,7 +15,7 @@ export interface WorldSignal {
   longitude: number;
   timestamp: string;
   observedValue: number;
-  expectedValue: number;
+  expectedValue: number | null;
   unit: string;
   deviation: number | null;
   deviationType: DeviationType;
@@ -25,17 +25,61 @@ export interface WorldSignal {
   description: string;
   methodology: string;
   limitation: string;
-  confidence: "high" | "medium" | "low";
+  confidence: number;
   baseline: EvidencePoint[];
   context: string;
+  kind?: "earthquake-event" | "earthquake-cluster" | "fire-cluster";
+  startedAt?: string;
+  updatedAt?: string;
+  sourceAsOf?: string;
+  status?: "active" | "resolved";
+  baselineLabel?: string;
+  evidence?: SignalEvidence;
   magnitude?: number;
   depth?: number;
+}
+export interface SignalEvidence {
+  observationWindowHours: number;
+  windowStart: string;
+  windowEnd: string;
+  baselineSamples: number;
+  baselineTargetSamples: number;
+  baselineWindowHours: number;
+  baselineStart: string | null;
+  baselineEnd: string | null;
+  ratio: number | null;
+  zscore: number | null;
+  observationCount: number;
+  observationIds: string[];
+  cellId?: string;
+  frpMw?: number | null;
+  frpSampleCount?: number;
+  confidenceDistribution?: Record<string, number>;
+  thresholds: Record<string, number | number[]>;
+  confidenceMethod: string;
+}
+export interface ProviderHealth {
+  id?: string;
+  name: string;
+  status: "demo" | "healthy" | "delayed" | "unavailable" | "error";
+  lastSuccessAt?: string | null;
+  lastAnalysisAt?: string | null;
+  analysisError?: string | null;
+  sourceAsOf?: string | null;
+  latestObservationAt?: string | null;
+  recordsReceived?: number;
+  recordsInserted?: number;
+  recordsUpdated?: number;
+  error?: string | null;
 }
 export interface SignalSnapshot {
   mode: "demo" | "live";
   asOf: string;
   signals: WorldSignal[];
-  providers: { name: string; status: "demo" | "connected" | "unavailable" }[];
+  providers: ProviderHealth[];
+  status?: "demo" | "live" | "partial" | "delayed" | "unavailable";
+  total?: number;
+  truncated?: boolean;
 }
 export interface SignalProvider {
   id: string;

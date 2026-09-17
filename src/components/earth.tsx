@@ -5,6 +5,7 @@ import {
   useState,
   useCallback,
   useSyncExternalStore,
+  useMemo,
 } from "react";
 import Globe, { type GlobeMethods } from "react-globe.gl";
 import { SEVERITY_COLOR, type WorldSignal } from "@/core/types";
@@ -33,6 +34,17 @@ export default function Earth({
   onSelect: (s: WorldSignal) => void;
   onCountry: (name: string) => void;
 }) {
+  const labelSignals = useMemo(() => {
+    if (signals.length <= 14) return signals;
+    const countries = new Set<string>();
+    return [...(selected ? [selected] : []), ...signals]
+      .filter((signal) => {
+        if (countries.has(signal.country)) return false;
+        countries.add(signal.country);
+        return true;
+      })
+      .slice(0, 12);
+  }, [signals, selected]);
   const container = useRef<HTMLDivElement>(null);
   const globe = useRef<GlobeMethods | undefined>(undefined);
   const [size, setSize] = useState({ width: 800, height: 700 });
@@ -143,11 +155,11 @@ export default function Earth({
         }
         pointColor={(d) => SEVERITY_COLOR[(d as WorldSignal).severity]}
         pointLabel={(d) =>
-          `${(d as WorldSignal).country} · ${(d as WorldSignal).title} (demo)`
+          `${(d as WorldSignal).country} · ${(d as WorldSignal).title} (${(d as WorldSignal).provenance === "synthetic" ? "demo" : "observed"})`
         }
         onPointClick={(d) => onSelect(d as WorldSignal)}
         pointsTransitionDuration={reducedMotion ? 0 : 400}
-        ringsData={reducedMotion ? [] : signals}
+        ringsData={reducedMotion ? [] : labelSignals}
         ringLat="latitude"
         ringLng="longitude"
         ringAltitude={0.018}
@@ -155,7 +167,7 @@ export default function Earth({
         ringMaxRadius={3.2}
         ringPropagationSpeed={0.7}
         ringRepeatPeriod={2400}
-        labelsData={signals}
+        labelsData={labelSignals}
         labelLat="latitude"
         labelLng="longitude"
         labelAltitude={0.035}

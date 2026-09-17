@@ -4,7 +4,7 @@ test("globe, evidence, filters, timeline and search work with explicit demo prov
 }, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/");
+  await page.goto("/?mode=demo");
   await expect(
     page.getByRole("heading", { name: "What changed?" }),
   ).toBeVisible();
@@ -85,7 +85,7 @@ test("globe, evidence, filters, timeline and search work with explicit demo prov
 test("API declares synthetic origin and does not claim live provider connections", async ({
   request,
 }) => {
-  const response = await request.get("/api/signals");
+  const response = await request.get("/api/signals?mode=demo");
   expect(response.ok()).toBe(true);
   const body = await response.json();
   expect(body.mode).toBe("demo");
@@ -102,7 +102,7 @@ test("API declares synthetic origin and does not claim live provider connections
 
 test("reduced motion and replay dates stay truthful", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/");
+  await page.goto("/?mode=demo");
   await expect(page.getByRole("button", { name: "Rotate globe" })).toBeDisabled(
     { timeout: 60000 },
   );

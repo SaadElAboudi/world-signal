@@ -56,13 +56,24 @@ const periods = [
 ];
 const shortCountry = (s: string) =>
   s === "United States of America" ? "United States" : s;
-export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
-  const [types, setTypes] = useState<SignalType[]>(LAYERS.map((l) => l.id));
+export default function Dashboard({
+  snapshot: initialSnapshot,
+}: {
+  snapshot: SignalSnapshot;
+}) {
+  const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const demo = snapshot.mode === "demo";
+  const [types, setTypes] = useState<SignalType[]>(
+    LAYERS.filter(
+      (l) => demo || l.id === "earthquake" || l.id === "wildfire",
+    ).map((l) => l.id),
+  );
   const [hours, setHours] = useState(24);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [country, setCountry] = useState<string | null>(null);
   const [significantOnly, setSignificantOnly] = useState(false);
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [replay, setReplay] = useState(100);
   const [playing, setPlaying] = useState(false);
   const search = useRef<HTMLInputElement>(null);
@@ -117,6 +128,59 @@ export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
     );
     return () => clearInterval(interval);
   }, [playing, replay]);
+  useEffect(() => {
+    if (demo) return;
+    const abort = new AbortController();
+    const refresh = async () => {
+      const params = new URLSearchParams({
+        mode: "live",
+        since: new Date(Date.now() - hours * 3600000).toISOString(),
+        limit: "250",
+      });
+      if (types.length) params.set("type", types.join(","));
+      if (query) params.set("q", query);
+      if (country) params.set("country", country);
+      if (significantOnly) params.set("severity", "significant");
+      if (hours > 24) params.set("includeResolved", "true");
+      try {
+        const response = await fetch(`/api/signals?${params}`, {
+          signal: abort.signal,
+          cache: "no-store",
+        });
+        const data = await response.json();
+        if (data.mode !== "live" || !Array.isArray(data.signals))
+          throw new Error("Unavailable snapshot");
+        if (!abort.signal.aborted) setSnapshot(data);
+      } catch {
+        if (!abort.signal.aborted)
+          setSnapshot((previous) => ({
+            ...previous,
+            status: "delayed",
+            providers: previous.providers.map((provider) => ({
+              ...provider,
+              status: "delayed",
+              error: "refresh_failed",
+            })),
+          }));
+      }
+    };
+    const debounce = setTimeout(refresh, 250);
+    const poll = setInterval(refresh, 60000);
+    return () => {
+      abort.abort();
+      clearTimeout(debounce);
+      clearInterval(poll);
+    };
+  }, [demo, hours, types, query, country, significantOnly, refreshVersion]);
+  const statusLabel = demo
+    ? "DEMO MODE"
+    : snapshot.status === "live"
+      ? "LIVE DATA"
+      : snapshot.status === "partial"
+        ? "PARTIAL DATA"
+        : snapshot.status === "unavailable"
+          ? "DATA UNAVAILABLE"
+          : "DATA DELAYED";
   const isPlaying = playing && replay < 100;
   const select = (signal: WorldSignal) => {
     setSelectedId(signal.id);
@@ -132,7 +196,11 @@ export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
       });
   };
   const reset = () => {
-    setTypes(LAYERS.map((l) => l.id));
+    setTypes(
+      LAYERS.filter(
+        (l) => demo || l.id === "earthquake" || l.id === "wildfire",
+      ).map((l) => l.id),
+    );
     setQuery("");
     setCountry(null);
     setSignificantOnly(false);
@@ -162,13 +230,19 @@ export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
         </div>
         <div className="header-actions">
           <button
-            className="demo-badge"
+            className={`demo-badge ${!demo && snapshot.status === "live" ? "live-badge" : ""}`}
             onClick={() => dialog.current?.showModal()}
           >
             <span />
-            DEMO MODE
+            {statusLabel}
             <Icon name="info" size={13} />
           </button>
+          <Link
+            className="mode-switch"
+            href={demo ? "/?mode=live" : "/?mode=demo"}
+          >
+            {demo ? "Live view" : "Demo"}
+          </Link>
           <span className="header-time">
             {new Date(asOf).toISOString().slice(11, 16)} <small>UTC</small>
           </span>
@@ -186,7 +260,7 @@ export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
           <div className="sidebar-title">
             <Icon name="layers" size={15} />
             <span>DATA LAYERS</span>
-            <span className="tiny-count">04</span>
+            <span className="tiny-count">{demo ? "04" : "02"}</span>
           </div>
           <div className="layer-list">
             {LAYERS.map((layer) => {
@@ -195,6 +269,16 @@ export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
                 <button
                   key={layer.id}
                   aria-label={layer.name}
+                  disabled={
+                    !demo &&
+                    (layer.id === "internet" || layer.id === "aviation")
+                  }
+                  title={
+                    !demo &&
+                    (layer.id === "internet" || layer.id === "aviation")
+                      ? "Not connected in this release"
+                      : layer.description
+                  }
                   className={`layer-button ${active ? "active" : ""}`}
                   aria-pressed={active}
                   onClick={() =>
@@ -210,7 +294,12 @@ export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
                   </span>
                   <span className="layer-name">
                     {layer.name}
-                    <small>{layer.description}</small>
+                    <small>
+                      {!demo &&
+                      (layer.id === "internet" || layer.id === "aviation")
+                        ? "Not connected"
+                        : layer.description}
+                    </small>
                   </span>
                   <span className="layer-count">
                     {inWindow
@@ -269,7 +358,10 @@ export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
               <Icon name="arrow" size={14} />
             </button>
             <div className="source-status">
-              <span className="status-dot" />4 simulated data layers
+              <span className="status-dot" />
+              {demo
+                ? "4 simulated data layers"
+                : `${snapshot.providers.filter((p) => p.status === "healthy").length}/2 sources current`}
             </div>
           </div>
         </aside>
@@ -277,7 +369,8 @@ export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
           <div className="globe-heading">
             <div className="eyebrow">
               <span className="status-dot" />
-              GLOBAL PULSE <span>/ SIMULATION</span>
+              GLOBAL PULSE{" "}
+              <span>{demo ? "/ SIMULATION" : "/ OBSERVED DATA"}</span>
             </div>
             <h1>What changed?</h1>
             <p>
@@ -297,7 +390,11 @@ export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
                 .toUpperCase()}
             </span>
             <span>
-              {replay === 100 ? "DEMO SNAPSHOT" : "HISTORICAL REPLAY"}
+              {demo
+                ? replay === 100
+                  ? "DEMO SNAPSHOT"
+                  : "HISTORICAL REPLAY"
+                : statusLabel}
             </span>
           </div>
           <GlobeBoundary>
@@ -322,7 +419,9 @@ export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
             <Icon name="search" size={17} />
             <input
               ref={search}
-              aria-label="Search demo signals"
+              aria-label={
+                demo ? "Search demo signals" : "Search observed signals"
+              }
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value);
@@ -364,8 +463,10 @@ export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
                     <span>{l.name}</span>
                     <b>
                       {count
-                        ? `${count} demo signal${count > 1 ? "s" : ""}`
-                        : "No demo coverage"}
+                        ? `${count} ${demo ? "demo " : ""}signal${count > 1 ? "s" : ""}`
+                        : demo
+                          ? "No demo coverage"
+                          : "No matching signal / check coverage"}
                     </b>
                   </p>
                 );
@@ -426,7 +527,10 @@ export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
                         {new Date(signal.timestamp).toISOString().slice(11, 16)}
                       </time>
                     </div>
-                    <h3>{signal.title}</h3>
+                    <h3>
+                      {signal.title}
+                      {signal.status === "resolved" ? " · resolved" : ""}
+                    </h3>
                     <div className="signal-card-bottom">
                       <span className={`severity ${signal.severity}`}>
                         <i />
@@ -434,7 +538,11 @@ export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
                       </span>
                       <strong>
                         {deviationLabel(signal)}
-                        <small>vs baseline</small>
+                        <small>
+                          {signal.kind === "earthquake-event"
+                            ? "observed"
+                            : "vs baseline"}
+                        </small>
                       </strong>
                     </div>
                   </button>
@@ -456,7 +564,13 @@ export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
               </div>
               <div className="feed-footer">
                 <Icon name="info" size={14} />
-                <span>Synthetic scenarios. Not live observations.</span>
+                <span>
+                  {demo
+                    ? "Synthetic scenarios. Not live observations."
+                    : snapshot.truncated
+                      ? `Showing ${snapshot.signals.length} of ${snapshot.total} signals. Refine filters.`
+                      : "Observed data · selection rules, not danger ratings."}
+                </span>
               </div>
             </>
           )}
@@ -486,6 +600,12 @@ export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
         <div className="timeline-divider" />
         <button
           className={`play-button ${isPlaying ? "active" : ""}`}
+          disabled={!demo}
+          title={
+            !demo
+              ? "Live history uses time-window filters. Exact historical replay is not available."
+              : "Replay demo scenarios"
+          }
           aria-label={isPlaying ? "Pause replay" : "Play demo replay"}
           onClick={() => {
             if (replay === 100) {
@@ -510,9 +630,15 @@ export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
               })}
             </span>
             <span>
-              {replay === 100
+              {demo && replay === 100
                 ? "16 SEP · 21:43 UTC"
-                : new Date(asOf).toISOString().slice(11, 16) + " UTC"}
+                : new Date(asOf).toLocaleString("en-GB", {
+                    timeZone: "UTC",
+                    day: "2-digit",
+                    month: "short",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }) + " UTC"}
             </span>
           </div>
           <input
@@ -520,7 +646,10 @@ export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
             min="0"
             max="100"
             value={replay}
-            aria-label="Demo replay position"
+            aria-label={
+              demo ? "Demo replay position" : "Live snapshot position"
+            }
+            disabled={!demo}
             onChange={(e) => {
               setReplay(Number(e.target.value));
               setPlaying(false);
@@ -530,23 +659,27 @@ export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
         <button
           className="snapshot-button"
           onClick={() => {
+            if (!demo) setRefreshVersion((value) => value + 1);
             setReplay(100);
             setPlaying(false);
           }}
         >
           <span className="status-dot" />
-          SNAPSHOT
+          {demo ? "SNAPSHOT" : "CURRENT"}
         </button>
       </section>
       <footer className="statusbar">
         <span>
           <span className="status-dot" />
-          DEMO ENVIRONMENT<span className="statusbar-sep">/</span>ALL VALUES ARE
-          SYNTHETIC
+          {demo ? "DEMO ENVIRONMENT" : statusLabel}
+          <span className="statusbar-sep">/</span>
+          {demo
+            ? "ALL VALUES ARE SYNTHETIC"
+            : "USGS + NASA FIRMS · NO SYNTHETIC OBSERVATIONS"}
         </span>
         <span>
           OBSERVE. COMPARE. UNDERSTAND.<span className="statusbar-sep">/</span>
-          V0.1
+          V0.2
         </span>
       </footer>
       <dialog
@@ -581,25 +714,76 @@ export default function Dashboard({ snapshot }: { snapshot: SignalSnapshot }) {
             <span>02 Compare</span>
             <span>03 Explain</span>
           </div>
-          <h3>You are exploring a demonstration.</h3>
-          <p>
-            Every event, measurement and reference sample in this version is
-            synthetic. The fixed scenario ends on 16 September 2026 at 21:43
-            UTC. The timeline filters these scenarios; it is not a historical
-            archive.
-          </p>
-          <p>
-            USGS, NASA FIRMS, Cloudflare Radar and OpenSky are intended data
-            providers. None is connected in this release. No AI is generating
-            explanations; contextual notes are editorial.
-          </p>
-          <h3>Transparent by design</h3>
-          <p>
-            Severity thresholds use seismic count z-scores (1.5 / 2 / 3), fire
-            detection ratios (1.5× / 2× / 3.5×) and absolute traffic changes (10
-            / 20 / 35%). Baselines use 30 synthetic samples and exclude the
-            current observation. Missing coverage never means “normal”.
-          </p>
+          {demo ? (
+            <>
+              <h3>You are exploring a demonstration.</h3>
+              <p>
+                Every event, measurement and reference sample in demo mode is
+                synthetic. The fixed scenario ends on 16 September 2026 at 21:43
+                UTC. Switch to Live view to query observed USGS and NASA FIRMS
+                data; the modes never mix.
+              </p>
+              <p>
+                Demo severity uses count z-scores, detection ratios and traffic
+                deviations over synthetic 30-day references. No AI is generating
+                explanations.
+              </p>
+            </>
+          ) : (
+            <>
+              <h3>Observed data and source health</h3>
+              <div className="provider-health">
+                {snapshot.providers.map((provider) => (
+                  <div key={provider.id ?? provider.name}>
+                    <strong>{provider.name}</strong>
+                    <span className={`health-${provider.status}`}>
+                      {provider.status.toUpperCase()}
+                    </span>
+                    <p>
+                      Last successful collection:{" "}
+                      {provider.lastSuccessAt
+                        ? new Date(provider.lastSuccessAt).toLocaleString(
+                            "en-GB",
+                            { timeZone: "UTC" },
+                          ) + " UTC"
+                        : "Not available"}
+                    </p>
+                    <p>
+                      Latest observation:{" "}
+                      {provider.latestObservationAt
+                        ? new Date(provider.latestObservationAt).toLocaleString(
+                            "en-GB",
+                            { timeZone: "UTC" },
+                          ) + " UTC"
+                        : "Not available"}
+                    </p>
+                    {provider.error && (
+                      <p>State: {provider.error.replaceAll("_", " ")}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <p>
+                A current collection does not guarantee full satellite or
+                catalogue coverage. Provider failures never substitute demo
+                data. Internet and aviation are not connected.
+              </p>
+              <h3>Transparent by design</h3>
+              <p>
+                Individual earthquakes cross documented magnitude, depth or
+                significance thresholds. Regional anomalies compare counts in
+                equal-length windows with stored historical observations. The
+                current window is excluded. Short fire references are labeled
+                provisional; missing history is never invented.
+              </p>
+              <p>
+                Confidence is a documented data-quality indicator, not an
+                incident probability. Thermal detections are not individual
+                fires, and geographic cells are not incident perimeters. No AI
+                or causal analysis is used.
+              </p>
+            </>
+          )}
           <p className="fineprint">
             Country boundaries: Natural Earth, public domain; generalized
             cartographic reference, not a statement on territorial status. Earth

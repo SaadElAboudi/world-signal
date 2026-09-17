@@ -269,7 +269,7 @@ function makeSignal(seed: Seed, index: number): WorldSignal {
     methodology: `Compare the current ${type === "aviation" ? "hour" : type === "internet" ? "indexed measurement" : "24-hour window"} with 30 synthetic daily reference samples. ${deviationType === "zscore" ? "Z-score = (observed − mean) / population standard deviation." : deviationType === "ratio" ? "Ratio = observed / reference mean." : "Change = (observed − reference mean) / reference mean × 100."} Current observation is excluded from the reference.`,
     limitation:
       "Synthetic demonstration data, not an actual event. Source links describe intended providers and do not corroborate this scenario. This reference does not model seasonality or reporting delays.",
-    confidence: "low",
+    confidence: 0.1,
     baseline,
     magnitude,
     depth,

@@ -1656,3 +1656,67 @@ button svg {
     scroll-behavior: auto !important;
   }
 }
+
+/* Phase 2: data state and provenance, preserving the observatory layout. */
+.live-badge {
+  color: var(--green);
+  border-color: #72dab840;
+  background: #72dab80a;
+}
+.live-badge > span {
+  background: var(--green);
+}
+.mode-switch {
+  color: #9bb4bf;
+  font: 9px var(--mono);
+  border-bottom: 1px solid #41555d;
+  padding-block: 5px;
+  white-space: nowrap;
+}
+.layer-button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.play-button:disabled {
+  opacity: 0.3;
+}
+.provider-health > div {
+  border-block-end: 1px solid var(--border);
+  padding: 14px 0;
+}
+.provider-health strong {
+  font-size: 11px;
+}
+.provider-health > div > span {
+  float: right;
+  font: 8px var(--mono);
+  color: #d4b77b;
+}
+.provider-health .health-healthy {
+  color: var(--green);
+}
+.provider-health p {
+  font-size: 9px;
+  margin: 7px 0 0;
+}
+@media (max-width: 760px) {
+  .header-actions {
+    gap: 8px;
+  }
+  .mode-switch {
+    font-size: 8px;
+  }
+  .demo-badge {
+    letter-spacing: 0.3px;
+  }
+  .statusbar > span:first-child {
+    font-size: 5px;
+    letter-spacing: 0;
+  }
+  .detail-type {
+    flex-wrap: wrap;
+  }
+  .demo-mini {
+    font-size: 6px;
+  }
+}

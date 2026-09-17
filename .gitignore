@@ -43,3 +43,7 @@ next-env.d.ts
 # Browser test artifacts
 /test-results/
 /playwright-report/
+
+# Local observations, PostgreSQL cluster and credentials
+/.data/
+!.env.example
