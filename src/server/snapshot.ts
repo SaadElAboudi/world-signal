@@ -60,7 +60,8 @@ export async function getSnapshot(
       provider.status === "healthy" &&
       (!provider.lastAnalysisAt ||
         provider.analysisError ||
-        now.getTime() - Date.parse(provider.lastAnalysisAt) > 15 * 60000)
+        now.getTime() - Date.parse(provider.lastAnalysisAt) >
+          getConfig().analysisStaleMinutes * 60000)
         ? {
             ...provider,
             status: "delayed" as const,
@@ -87,6 +88,7 @@ export async function getSnapshot(
     );
     const snapshot: SignalSnapshot = {
       mode: "live",
+      collectionCadenceMinutes: getConfig().collectionCadenceMinutes,
       asOf: now.toISOString(),
       providers,
       status: aggregateHealth(providers),
@@ -101,6 +103,7 @@ export async function getSnapshot(
     log("snapshot.unavailable", { code: errorCode(error) });
     return {
       mode: "live",
+      collectionCadenceMinutes: getConfig().collectionCadenceMinutes,
       asOf: now.toISOString(),
       status: "unavailable",
       signals: [],

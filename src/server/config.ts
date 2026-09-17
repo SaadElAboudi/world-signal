@@ -31,6 +31,26 @@ export function getConfig() {
   return {
     mode: mode as "demo" | "live",
     databaseUrl: process.env.DATABASE_URL,
+    databaseSslCa: process.env.DATABASE_SSL_CA,
+    databasePoolMax: numberEnv("DATABASE_POOL_MAX", 5, 2, 20),
+    firmsRawSamplesPerHour: numberEnv(
+      "FIRMS_RAW_SAMPLES_PER_CELL_HOUR",
+      0,
+      0,
+      100,
+    ),
+    firmsRawRetentionHours:
+      process.env.FIRMS_RAW_RETENTION_HOURS === undefined ||
+      process.env.FIRMS_RAW_RETENTION_HOURS === "0"
+        ? 0
+        : numberEnv("FIRMS_RAW_RETENTION_HOURS", 48, 48, 168),
+    analysisStaleMinutes: numberEnv("ANALYSIS_STALE_MINUTES", 15, 5, 1440),
+    collectionCadenceMinutes: numberEnv(
+      "COLLECTION_CADENCE_MINUTES",
+      5,
+      5,
+      1440,
+    ),
     firmsTransport: firmsTransport as "public" | "api",
     firmsKey: process.env.NASA_FIRMS_API_KEY,
     usgsIntervalMinutes: numberEnv("USGS_INTERVAL_MINUTES", 5, 5),

@@ -1,3 +1,4 @@
+import { getConfig } from "./config";
 import { getPool } from "../database/client";
 import { storeObservations } from "../database/observations";
 import { UsgsProvider } from "../providers/usgs";
@@ -27,6 +28,11 @@ export async function ingest(
       });
       return { status: "skipped" as const };
     }
+    // Holding the provider lock proves older running entries no longer have a live collector.
+    await client.query(
+      "UPDATE provider_runs SET status='failed',finished_at=now(),error_code='interrupted' WHERE provider=$1 AND status='running'",
+      [provider.id],
+    );
     const run = await client.query(
       "INSERT INTO provider_runs(provider,status,history) VALUES($1,'running',$2) RETURNING id",
       [provider.id, history],
@@ -44,7 +50,13 @@ export async function ingest(
       provider: provider.id,
       count: batch.observations.length,
     });
-    const result = await storeObservations(client, provider.id, batch);
+    const result = await storeObservations(
+      client,
+      provider.id,
+      batch,
+      getConfig().firmsRawRetentionHours,
+      getConfig().firmsRawSamplesPerHour,
+    );
     let latest: string | null = null;
     for (const o of batch.observations)
       if (!latest || o.timestamp > latest) latest = o.timestamp;

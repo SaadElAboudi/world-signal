@@ -1,3 +1,4 @@
+import { fireAggregates } from "../database/fire-history";
 import { getPool } from "../database/client";
 import { getConfig } from "./config";
 import { getProviderHealth } from "./health";
@@ -44,36 +45,45 @@ export async function computeSignals(now = new Date()) {
             (fire ? config.firmsSettlementHours * 3600000 : 0)) /
             3600000,
         ) * 3600000;
-      const coverageRows = await client.query(
-        "SELECT coverage_start,coverage_end FROM provider_runs WHERE provider=$1 AND status='success' AND coverage_end>$2 ORDER BY coverage_start",
-        [provider, new Date(end - 32 * 86400000)],
-      );
+      const coverageRows =
+        fire && config.firmsRawRetentionHours > 0
+          ? await client.query(
+              "SELECT hour_end-interval '1 hour' AS coverage_start,hour_end AS coverage_end FROM fire_hour_coverage WHERE hour_end>$1 ORDER BY hour_end",
+              [new Date(end - 32 * 86400000)],
+            )
+          : await client.query(
+              "SELECT coverage_start,coverage_end FROM provider_runs WHERE provider=$1 AND status='success' AND coverage_end>$2 ORDER BY coverage_start",
+              [provider, new Date(end - 32 * 86400000)],
+            );
       const coverage = mergeCoverage(
         coverageRows.rows.map((r) => ({
           start: r.coverage_start.getTime(),
           end: r.coverage_end.getTime(),
         })),
       );
-      const aggregates = await client.query(
-        `SELECT cell_id,floor(extract(epoch FROM ($2::timestamptz-occurred_at))/$3)::int AS bucket,count(*)::int AS count,avg(quality)::float8 AS mean_quality,sum(value)::float8 AS frp_total,count(value)::int AS frp_count,min(occurred_at) AS first_at,max(occurred_at) AS last_at,
+      const aggregates =
+        fire && config.firmsRawRetentionHours > 0
+          ? await fireAggregates(client, end)
+          : await client.query(
+              `SELECT cell_id,floor(extract(epoch FROM ($2::timestamptz-occurred_at))/$3)::int AS bucket,count(*)::int AS count,avg(quality)::float8 AS mean_quality,sum(value)::float8 AS frp_total,count(value)::int AS frp_count,min(occurred_at) AS first_at,max(occurred_at) AS last_at,
         (array_agg(id ORDER BY occurred_at DESC) FILTER(WHERE occurred_at>$2::timestamptz-($3*interval '1 second')))[1:20] AS ids,
         count(*) FILTER(WHERE quality>=0.9)::int AS high,count(*) FILTER(WHERE quality>=0.5 AND quality<0.9)::int AS nominal,count(*) FILTER(WHERE quality<0.5)::int AS low
         FROM observations WHERE provider=$1 AND active AND occurred_at<=$2 AND occurred_at>$4 AND ${fire ? "quality>=0.5" : "value>=$5"} GROUP BY cell_id,bucket`,
-        fire
-          ? [
-              provider,
-              new Date(end),
-              interval / 1000,
-              new Date(end - 31 * 86400000),
-            ]
-          : [
-              provider,
-              new Date(end),
-              interval / 1000,
-              new Date(end - 31 * 86400000),
-              config.quakeClusterMagnitude,
-            ],
-      );
+              fire
+                ? [
+                    provider,
+                    new Date(end),
+                    interval / 1000,
+                    new Date(end - 31 * 86400000),
+                  ]
+                : [
+                    provider,
+                    new Date(end),
+                    interval / 1000,
+                    new Date(end - 31 * 86400000),
+                    config.quakeClusterMagnitude,
+                  ],
+            );
       const normalized: CellAggregate[] = aggregates.rows.map((r) => ({
         ...r,
         first_at: r.first_at.toISOString(),
@@ -120,33 +130,27 @@ export async function computeSignals(now = new Date()) {
       }
       await client.query("BEGIN");
       try {
-        for (const signal of signals) {
-          const result = await client.query(
-            `INSERT INTO signals(id,provider,type,kind,severity,latitude,longitude,observed_at,started_at,updated_at,confidence,payload) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT(id) DO UPDATE SET severity=EXCLUDED.severity,latitude=EXCLUDED.latitude,longitude=EXCLUDED.longitude,observed_at=EXCLUDED.observed_at,updated_at=EXCLUDED.updated_at,resolved_at=NULL,confidence=EXCLUDED.confidence,payload=EXCLUDED.payload RETURNING (xmax=0) AS inserted`,
-            [
-              signal.id,
-              provider,
-              signal.type,
-              signal.kind,
-              signal.severity,
-              signal.latitude,
-              signal.longitude,
-              signal.timestamp,
-              signal.startedAt,
-              now,
-              signal.confidence,
-              JSON.stringify(signal),
-            ],
-          );
-          await client.query(
-            "INSERT INTO signal_evidence(signal_id,computed_at,evidence) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
-            [signal.id, now, JSON.stringify(signal.evidence)],
-          );
-          log(result.rows[0].inserted ? "signal.created" : "signal.updated", {
+        const payloads = JSON.stringify(signals);
+        const saved = await client.query(
+          `INSERT INTO signals(id,provider,type,kind,severity,latitude,longitude,observed_at,started_at,updated_at,confidence,payload)
+          SELECT s->>'id',$2,s->>'type',s->>'kind',s->>'severity',(s->>'latitude')::float8,(s->>'longitude')::float8,(s->>'timestamp')::timestamptz,(s->>'startedAt')::timestamptz,$3,(s->>'confidence')::float8,s
+          FROM jsonb_array_elements($1::jsonb) s
+          ON CONFLICT(id) DO UPDATE SET severity=EXCLUDED.severity,latitude=EXCLUDED.latitude,longitude=EXCLUDED.longitude,observed_at=EXCLUDED.observed_at,updated_at=EXCLUDED.updated_at,resolved_at=NULL,confidence=EXCLUDED.confidence,payload=EXCLUDED.payload
+          RETURNING id,(xmax=0) AS inserted`,
+          [payloads, provider, now],
+        );
+        await client.query(
+          `INSERT INTO signal_evidence(signal_id,computed_at,evidence)
+          SELECT s->>'id',$2,s->'evidence' FROM jsonb_array_elements($1::jsonb) s
+          WHERE (SELECT evidence FROM signal_evidence WHERE signal_id=s->>'id' ORDER BY computed_at DESC LIMIT 1) IS DISTINCT FROM s->'evidence'
+          ON CONFLICT DO NOTHING`,
+          [payloads, now],
+        );
+        for (const row of saved.rows)
+          log(row.inserted ? "signal.created" : "signal.updated", {
             provider,
-            id: signal.id,
+            id: row.id,
           });
-        }
         const resolved = await client.query(
           "UPDATE signals SET resolved_at=$2,updated_at=$2,payload=jsonb_set(payload,'{status}','\"resolved\"') WHERE provider=$1 AND resolved_at IS NULL AND NOT(id=ANY($3::text[])) RETURNING id",
           [provider, now, signals.map((s) => s.id)],

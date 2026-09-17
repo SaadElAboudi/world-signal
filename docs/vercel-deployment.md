@@ -1,5 +1,7 @@
 # Vercel production connection
 
+For the currently configured Aiven deployment, use the [hosted operation guide](hosted-operations.md). The steps below also describe alternative full-storage deployments.
+
 A successful Vercel build deploys the web application. It does **not** transfer the local PostgreSQL cluster or start `npm run worker`. The hosted application needs both a hosted PostgreSQL database and an independently running ingestion worker.
 
 ## 1. Connect hosted PostgreSQL
@@ -25,18 +27,20 @@ With Vercel CLI authenticated, link the correct project and pull production envi
 ```sh
 vercel login
 vercel link
-vercel env pull .env.production.local --environment=production
-chmod 600 .env.production.local
+vercel env pull .env.hosted.local --environment=production
+chmod 600 .env.hosted.local
 ```
+
+Sensitive variables are not readable through `vercel env pull`. If connection values are blank/redacted, obtain them from the database provider through its authorized interface and save them in the ignored file.
 
 Use Node's explicit environment file so the existing local `.env.local` database does not accidentally become the initialization target:
 
 ```sh
-node --env-file=.env.production.local --import=tsx scripts/check-db.ts
-node --env-file=.env.production.local --import=tsx scripts/migrate.ts
-node --env-file=.env.production.local --import=tsx scripts/seed.ts
-node --env-file=.env.production.local --import=tsx scripts/ingest.ts all --history
-node --env-file=.env.production.local --import=tsx scripts/check-db.ts
+node --env-file=.env.hosted.local --import=tsx scripts/check-db.ts
+node --env-file=.env.hosted.local --import=tsx scripts/migrate.ts
+node --env-file=.env.hosted.local --import=tsx scripts/seed.ts
+node --env-file=.env.hosted.local --import=tsx scripts/ingest.ts all --history
+node --env-file=.env.hosted.local --import=tsx scripts/check-db.ts
 ```
 
 The first check can report missing schema before migration; this is expected. These commands must run from the repository root on Node 20.9+ with dependencies installed. `db:check` is read-only, prints safe diagnostic labels and collection/analysis times, and never prints the connection string or raw database exceptions. Without an explicit production environment it checks the normal local development configuration.
@@ -50,7 +54,7 @@ Run `npm run worker` on a persistent worker service or server, using the same ho
 For a temporary verification from the development machine:
 
 ```sh
-node --env-file=.env.production.local --import=tsx scripts/worker.ts
+node --env-file=.env.hosted.local --import=tsx scripts/worker.ts
 ```
 
 This temporary process stops collecting when the terminal or machine stops. It is not a durable production service. Do not add the worker to the Next.js build command: it never exits. Do not rely on a normal page request to ingest data.

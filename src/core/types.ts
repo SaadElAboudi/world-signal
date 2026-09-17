@@ -73,6 +73,7 @@ export interface ProviderHealth {
   error?: string | null;
 }
 export interface SignalSnapshot {
+  collectionCadenceMinutes?: number;
   mode: "demo" | "live";
   asOf: string;
   signals: WorldSignal[];

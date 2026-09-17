@@ -1,0 +1,37 @@
+name: Collect real observations
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: world-signal-production-ingestion
+  cancel-in-progress: false
+jobs:
+  ingest:
+    if: vars.WORLD_SIGNAL_INGEST_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    # Bound scheduled runner usage; delayed/missed jobs remain visible as stale data.
+    timeout-minutes: 2
+    env:
+      DATABASE_URL: ${{ secrets.WORLD_SIGNAL_DATABASE_URL }}
+      DATABASE_SSL_CA: ${{ secrets.WORLD_SIGNAL_DATABASE_CA }}
+      DATABASE_POOL_MAX: "2"
+      WORLD_SIGNAL_MODE: live
+      FIRMS_TRANSPORT: public
+      FIRMS_RAW_RETENTION_HOURS: "48"
+      FIRMS_RAW_SAMPLES_PER_CELL_HOUR: "5"
+      USGS_STALE_MINUTES: "90"
+      ANALYSIS_STALE_MINUTES: "90"
+      COLLECTION_CADENCE_MINUTES: "60"
+      FIRMS_INTERVAL_MINUTES: "30"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Ingest due providers, recompute signals and apply retention
+        run: npm run worker -- --once

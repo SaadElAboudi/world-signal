@@ -38,7 +38,7 @@ A short history is explicitly provisional, with the actual window count in the U
 
 Confidence is a reproducible quality index: 30% source quality, 15% observation support, 30% historical coverage, 10% baseline stability and 15% freshness. Short cluster references with less than half the target history are capped at 0.55. Labels are LOW below 0.60, MEDIUM below 0.80 and HIGH otherwise. Individual earthquake events use a separate review-status index: 0.85 for reviewed and 0.65 for preliminary, because historical comparison is inapplicable. These labels are not calibrated incident probabilities and do not measure severity.
 
-Evidence includes window bounds, observed/expected values, reference sample count/target, ratio or z-score, thresholds, source timestamps, quality distribution, available FRP and up to 20 observation IDs. Full observations remain queryable in PostgreSQL. Context is deterministic and factual; no LLM, causal inference or composite global threat score is used.
+Evidence includes window bounds, observed/expected values, reference sample count/target, ratio or z-score, thresholds, source timestamps, quality distribution, available FRP and up to 20 observation IDs. In the full-storage profile, full observations remain queryable in PostgreSQL. The optional compact hosted profile retains recent raw samples plus exact hourly aggregates; see [hosted operation](hosted-operations.md). Context is deterministic and factual; no LLM, causal inference or composite global threat score is used.
 
 ## API, freshness and failure semantics
 
@@ -53,3 +53,7 @@ The demo provider is explicit and separate. No raw provider fetching, database c
 Run the web application, persistent PostgreSQL and scheduler as separate processes/services. Supply secrets through runtime environment, enable database TLS as required by the host, run migrations during release, and configure backups/retention and process supervision. The included local database helper is not a production service manager. No cloud deployment or automatic backup setup is included.
 
 Keep raw observations when tuning rules so recomputation remains possible. Introduce seasonality, multiple-sensor calibration and stronger geospatial assignment only with appropriate data and evaluation. Internet/aviation connectors and AI briefs belong to later phases.
+
+## Compact hosted profile
+
+The Aiven deployment uses the exact hourly aggregates and bounded raw sampling described in [hosted operation](hosted-operations.md). The historical counts remain complete; the raw evidence archive is sampled. Web reads use a dedicated role and verified TLS. Production runs an hourly scheduled collector with an explicit 90-minute analysis/USGS freshness budget; local persistent-worker defaults remain unchanged.

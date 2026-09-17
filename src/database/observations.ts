@@ -1,18 +1,29 @@
 import type { PoolClient } from "pg";
+import { storeFireHistory, sampleRecentFireObservations } from "./fire-history";
 import type { NormalizedBatch } from "../providers/contract";
 /** One transaction plus a staging table gives atomic snapshots, bulk upserts and safe retractions. */
 export async function storeObservations(
   client: PoolClient,
   provider: string,
   batch: NormalizedBatch,
+  retentionHours = 0,
+  samplesPerHour = 0,
 ) {
   await client.query("BEGIN");
   try {
+    const compact = provider === "firms" && retentionHours > 0;
+    if (compact) await storeFireHistory(client, batch);
+    const cutoff = new Date(
+      Date.parse(batch.sourceAsOf) - retentionHours * 3600000,
+    ).toISOString();
+    const retained = compact
+      ? sampleRecentFireObservations(batch.observations, cutoff, samplesPerHour)
+      : batch.observations;
     await client.query(
       "CREATE TEMP TABLE incoming_observations (LIKE observations INCLUDING DEFAULTS) ON COMMIT DROP",
     );
-    for (let start = 0; start < batch.observations.length; start += 1500) {
-      const rows = batch.observations.slice(start, start + 1500).map((o) => ({
+    for (let start = 0; start < retained.length; start += 1500) {
+      const rows = retained.slice(start, start + 1500).map((o) => ({
         id: o.id,
         provider: o.provider,
         upstream_id: o.upstreamId,
@@ -47,9 +58,23 @@ export async function storeObservations(
       SELECT count(*) FILTER(WHERE inserted)::int AS inserted, count(*) FILTER(WHERE NOT inserted)::int AS updated FROM upserts`);
     // Only a validated, complete feed can retract previously ingested observations.
     const retracted = await client.query(
-      `UPDATE observations o SET active=false,ingested_at=now() WHERE provider=$1 AND active AND occurred_at >= $2 AND occurred_at <= $3 AND source_updated_at <= $4 AND NOT EXISTS(SELECT 1 FROM incoming_observations i WHERE i.id=o.id)`,
+      `UPDATE observations o SET active=false,ingested_at=now(),source_updated_at=$4 WHERE provider=$1 AND active AND occurred_at >= $2 AND occurred_at <= $3 AND source_updated_at <= $4 AND NOT EXISTS(SELECT 1 FROM incoming_observations i WHERE i.id=o.id)`,
       [provider, batch.coverageStart, batch.coverageEnd, batch.sourceAsOf],
     );
+    if (compact) {
+      await client.query(
+        "DELETE FROM observations WHERE provider='firms' AND occurred_at<$1",
+        [cutoff],
+      );
+      await client.query(
+        "DELETE FROM fire_hourly WHERE hour_end<$1::timestamptz-interval '35 days'",
+        [batch.sourceAsOf],
+      );
+      await client.query(
+        "DELETE FROM fire_hour_coverage WHERE hour_end<$1::timestamptz-interval '35 days'",
+        [batch.sourceAsOf],
+      );
+    }
     await client.query("COMMIT");
     return {
       inserted: result.rows[0].inserted as number,

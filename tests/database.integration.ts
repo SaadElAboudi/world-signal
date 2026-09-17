@@ -53,7 +53,7 @@ const fixtureProvider: ObservationProvider = {
 before(async () => {
   await migrate();
   await getPool().query(
-    "TRUNCATE signal_evidence,signals,observations,provider_runs RESTART IDENTITY CASCADE",
+    "TRUNCATE fire_hourly,fire_hour_coverage,signal_evidence,signals,observations,provider_runs RESTART IDENTITY CASCADE",
   );
 });
 after(async () => {
@@ -250,5 +250,148 @@ test("database interruption returns unavailable live state while demo remains fu
   } finally {
     await closePool();
     process.env.DATABASE_URL = testUrl;
+  }
+});
+
+test("compact fire history preserves baselines, revisions and rollback while bounding raw retention", async () => {
+  const { storeObservations } = await import("../src/database/observations");
+  const { fireAggregates } = await import("../src/database/fire-history");
+  const client = await getPool().connect();
+  const previousMode = process.env.FIRMS_RAW_RETENTION_HOURS;
+  let released = false;
+  const original = (
+    await client.query(
+      "SELECT payload FROM signals WHERE provider='firms' AND resolved_at IS NULL",
+    )
+  ).rows[0].payload;
+  const stored = (
+    await client.query("SELECT * FROM observations WHERE provider='firms'")
+  ).rows;
+  const observations: Observation[] = stored.map((r) => ({
+    id: r.id,
+    provider: r.provider,
+    upstreamId: r.upstream_id,
+    type: r.type,
+    latitude: r.latitude,
+    longitude: r.longitude,
+    timestamp: r.occurred_at.toISOString(),
+    sourceUpdatedAt: r.source_updated_at.toISOString(),
+    value: r.value,
+    cellId: r.cell_id,
+    quality: r.quality,
+    sourceUrl: r.source_url,
+    properties: r.properties,
+    active: r.active,
+  }));
+  const batch: NormalizedBatch = {
+    observations,
+    received: observations.length,
+    rejected: 0,
+    sourceAsOf: now.toISOString(),
+    coverageStart: new Date(now.getTime() - 8 * 86400000).toISOString(),
+    coverageEnd: now.toISOString(),
+  };
+  const end = Math.floor((now.getTime() - 3 * 3600000) / 3600000) * 3600000;
+  try {
+    await storeObservations(client, "firms", batch, 48);
+    const rawCount = Number(
+      (
+        await client.query(
+          "SELECT count(*) FROM observations WHERE provider='firms'",
+        )
+      ).rows[0].count,
+    );
+    assert.ok(rawCount < observations.length);
+    assert.equal(rawCount, 90);
+    process.env.FIRMS_RAW_RETENTION_HOURS = "48";
+    // Release the connection before recomputation: production uses a two-connection pool.
+    client.release();
+    released = true;
+    await computeSignals(now);
+    const compact = (
+      await getPool().query("SELECT payload FROM signals WHERE id=$1", [
+        original.id,
+      ])
+    ).rows[0].payload;
+    assert.equal(compact.observedValue, original.observedValue);
+    assert.equal(compact.expectedValue, original.expectedValue);
+    assert.deepEqual(compact.baseline, original.baseline);
+    assert.match(compact.methodology, /aggregated hourly/);
+    const countBefore = (
+      await getPool().query("SELECT count(*) FROM signal_evidence")
+    ).rows[0].count;
+    await computeSignals(new Date(now.getTime() + 60000));
+    assert.equal(
+      (await getPool().query("SELECT count(*) FROM signal_evidence")).rows[0]
+        .count,
+      countBefore,
+    );
+    const connection = await getPool().connect();
+    try {
+      await storeObservations(connection, "firms", batch, 48);
+      assert.equal(
+        (await fireAggregates(connection, end)).rows.find((r) => r.bucket === 0)
+          .count,
+        80,
+      );
+      const revision = {
+        ...batch,
+        sourceAsOf: new Date(now.getTime() + 120000).toISOString(),
+        observations: observations.filter((o) => o.id !== "fixture-fire-0-0"),
+      };
+      await storeObservations(connection, "firms", revision, 48);
+      assert.equal(
+        (await fireAggregates(connection, end)).rows.find((r) => r.bucket === 0)
+          .count,
+        79,
+      );
+      // Replaying an older complete feed cannot resurrect a retracted detection.
+      await storeObservations(connection, "firms", batch, 48);
+      assert.equal(
+        (await fireAggregates(connection, end)).rows.find((r) => r.bucket === 0)
+          .count,
+        79,
+      );
+      assert.equal(
+        (
+          await connection.query(
+            "SELECT active FROM observations WHERE id='fixture-fire-0-0'",
+          )
+        ).rows[0].active,
+        false,
+      );
+      const bad = {
+        ...revision,
+        observations: [...revision.observations, revision.observations[1]],
+      };
+      await assert.rejects(() =>
+        storeObservations(connection, "firms", bad, 48),
+      );
+      assert.equal(
+        (await fireAggregates(connection, end)).rows.find((r) => r.bucket === 0)
+          .count,
+        79,
+      );
+      await storeObservations(connection, "firms", revision, 48, 5);
+      assert.equal(
+        (await fireAggregates(connection, end)).rows.find((r) => r.bucket === 0)
+          .count,
+        79,
+      );
+      assert.ok(
+        (
+          await connection.query(
+            "SELECT count(*)::int AS n FROM observations WHERE provider='firms' AND active",
+          )
+        ).rows[0].n <= 10,
+      );
+    } finally {
+      connection.release();
+    }
+  } finally {
+    if (!released) client.release();
+    if (previousMode === undefined)
+      delete process.env.FIRMS_RAW_RETENTION_HOURS;
+    else process.env.FIRMS_RAW_RETENTION_HOURS = previousMode;
   }
 });

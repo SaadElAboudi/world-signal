@@ -732,6 +732,12 @@ export default function Dashboard({
           ) : (
             <>
               <h3>Observed data and source health</h3>
+              <p>
+                Scheduled collection: approximately every{" "}
+                {snapshot.collectionCadenceMinutes ?? 5} minutes. Upstream
+                reporting can take longer; collection times below show actual
+                freshness.
+              </p>
               <div className="provider-health">
                 {snapshot.providers.map((provider) => (
                   <div key={provider.id ?? provider.name}>

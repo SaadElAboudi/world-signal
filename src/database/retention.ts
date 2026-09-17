@@ -1,0 +1,26 @@
+import { getPool } from "./client";
+import { getConfig } from "../server/config";
+/** Explicit compact-storage profile: preserve 35 days of references and daily older evidence. */
+export async function maintainCompactStorage(now = new Date()) {
+  if (!getConfig().firmsRawRetentionHours) return;
+  const pool = getPool();
+  await pool.query(
+    "DELETE FROM observations WHERE provider='usgs' AND occurred_at<$1::timestamptz-interval '35 days'",
+    [now],
+  );
+  await pool.query(
+    "DELETE FROM signals WHERE resolved_at<$1::timestamptz-interval '35 days'",
+    [now],
+  );
+  await pool.query(
+    `DELETE FROM signal_evidence e USING (
+    SELECT id,computed_at,row_number() OVER(PARTITION BY signal_id,date_trunc('day',computed_at) ORDER BY computed_at DESC,id DESC) AS rank
+    FROM signal_evidence
+  ) old WHERE e.id=old.id AND (old.computed_at<$1::timestamptz-interval '35 days' OR (old.rank>1 AND old.computed_at<$1::timestamptz-interval '2 days'))`,
+    [now],
+  );
+  await pool.query(
+    "DELETE FROM provider_runs WHERE finished_at<$1::timestamptz-interval '40 days'",
+    [now],
+  );
+}
