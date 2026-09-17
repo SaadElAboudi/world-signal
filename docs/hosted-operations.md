@@ -18,7 +18,7 @@ The first successful hosted import analyzed 514,805 fire detections and retained
 
 ## Automatic collection
 
-`.github/workflows/ingest.yml` runs at minute 17 of each hour and can also be dispatched manually. It requires repository variable `WORLD_SIGNAL_INGEST_ENABLED=true` and secrets `WORLD_SIGNAL_DATABASE_URL` and `WORLD_SIGNAL_DATABASE_CA`. The worker performs one bounded pass with `npm run worker -- --once`: collect due providers, refresh wider history daily, recompute signals and apply retention.
+`.github/workflows/ingest.yml` runs at minute 17 of each hour and can also be dispatched manually. It requires repository variable `WORLD_SIGNAL_INGEST_ENABLED=true` and secrets `WORLD_SIGNAL_DATABASE_URL` and `WORLD_SIGNAL_DATABASE_CA`. Manual dispatch forces a fresh collection from both sources; scheduled runs respect provider intervals. The worker performs one bounded pass with `npm run worker -- --once`: collect due providers, refresh wider history daily, recompute signals and apply retention.
 
 Each job has a two-minute timeout, limiting scheduled runner allocation to at most 1,488 minutes for a 31-day month, excluding manual runs, CI and other repositories. This uses the GitHub account's included Actions allowance; actual account usage and billing controls still apply. No paid runner is configured. GitHub schedules are best-effort and can be delayed or skipped; failed jobs do not invent fresh data.
 

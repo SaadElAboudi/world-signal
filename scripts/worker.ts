@@ -30,6 +30,7 @@ async function main() {
             ? config.usgsIntervalMinutes
             : config.firmsIntervalMinutes) * 60000;
         if (
+          process.argv.includes("--force") ||
           !last.rows[0].attempt ||
           Date.now() - last.rows[0].attempt.getTime() >= interval
         ) {
