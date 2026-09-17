@@ -4,6 +4,8 @@
 
 Phase 2 connects **USGS earthquakes and NASA FIRMS fire detections** to PostgreSQL, deterministic anomaly analysis and the existing interactive globe. Live observations and the explicitly labeled synthetic demo remain separate. No AI-generated analysis is used.
 
+Phase 3 has started with a tested correlation engine, read-only recalculation command, source normalizers and matched historical baselines. Internet/aviation collection and correlated-event UI are not yet enabled. See [Phase 3 implementation status](docs/phase-3.md).
+
 ![WORLD SIGNAL live interface — real USGS and NASA FIRMS data](docs/live-preview.png)
 
 ## Run locally
