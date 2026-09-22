@@ -41,7 +41,10 @@ function alpha2(properties: Record<string, unknown> | undefined) {
   return null;
 }
 
-function coordinateBounds(value: unknown, bounds = { minLat: 90, maxLat: -90, minLon: 180, maxLon: -180 }) {
+function coordinateBounds(
+  value: unknown,
+  bounds = { minLat: 90, maxLat: -90, minLon: 180, maxLon: -180 },
+) {
   if (!Array.isArray(value)) return bounds;
   if (
     value.length >= 2 &&
@@ -62,7 +65,10 @@ function coordinateBounds(value: unknown, bounds = { minLat: 90, maxLat: -90, mi
 
 async function defaultCountryLocation(code: string): Promise<CountryLocation | null> {
   if (!countryLocationCache) {
-    const raw = await readFile(path.join(process.cwd(), "public/geo/countries.geojson"), "utf8");
+    const raw = await readFile(
+      path.join(process.cwd(), "public/geo/countries.geojson"),
+      "utf8",
+    );
     const parsed = JSON.parse(raw) as { features?: GeoJsonFeature[] };
     const map = new Map<string, CountryLocation>();
     for (const feature of parsed.features ?? []) {
@@ -81,8 +87,10 @@ async function defaultCountryLocation(code: string): Promise<CountryLocation | n
 }
 
 function severityForScore(score: number | null | undefined) {
-  if (score !== null && score !== undefined && score >= 1000) return "significant" as const;
-  if (score !== null && score !== undefined && score >= 250) return "elevated" as const;
+  if (score !== null && score !== undefined && score >= 1000)
+    return "significant" as const;
+  if (score !== null && score !== undefined && score >= 250)
+    return "elevated" as const;
   return "notable" as const;
 }
 
@@ -93,15 +101,25 @@ export class IodaInternetOutageProvider implements EventProvider {
   private readonly resolveLocation: LocationResolver;
   private readonly endpoint: string;
 
-  constructor(options: { fetchImpl?: FetchLike; resolveLocation?: LocationResolver; endpoint?: string } = {}) {
+  constructor(
+    options: {
+      fetchImpl?: FetchLike;
+      resolveLocation?: LocationResolver;
+      endpoint?: string;
+    } = {},
+  ) {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.resolveLocation = options.resolveLocation ?? defaultCountryLocation;
     this.endpoint = options.endpoint ?? `${API_ROOT}/outages/events`;
   }
 
-  async fetchEvents(options: { now?: Date; days?: number; limit?: number } = {}): Promise<WorldEvent[]> {
+  async fetchEvents(
+    options: { now?: Date; days?: number; limit?: number } = {},
+  ): Promise<WorldEvent[]> {
     const now = options.now ?? new Date();
-    const days = Math.min(Math.max(options.days ?? 2, 1), 14);
+    // A long window is intentional: IODA outages can remain open for weeks.
+    // We fetch detected events, not raw measurements, so this remains compact.
+    const days = Math.min(Math.max(options.days ?? 90, 1), 90);
     const from = Math.floor((now.getTime() - days * 86_400_000) / 1000);
     const until = Math.floor(now.getTime() / 1000);
     const url = new URL(this.endpoint);
@@ -109,7 +127,10 @@ export class IodaInternetOutageProvider implements EventProvider {
     url.searchParams.set("until", String(until));
     url.searchParams.set("entityType", "country");
     url.searchParams.set("format", "codf");
-    url.searchParams.set("limit", String(Math.min(Math.max(options.limit ?? 500, 1), 2000)));
+    url.searchParams.set(
+      "limit",
+      String(Math.min(Math.max(options.limit ?? 500, 1), 2000)),
+    );
     url.searchParams.set("orderBy", "time/desc");
 
     const response = await this.fetchImpl(url, {
@@ -139,7 +160,8 @@ export class IodaInternetOutageProvider implements EventProvider {
         category: "infrastructure",
         type: "internet_outage",
         title: `Internet outage detected in ${row.location_name}`,
-        description: "IODA detected a macroscopic Internet connectivity disruption from network measurements.",
+        description:
+          "IODA detected a macroscopic Internet connectivity disruption from network measurements.",
         status: active ? "active" : "resolved",
         severity: severityForScore(row.score),
         confidence: 0.75,
@@ -153,8 +175,12 @@ export class IodaInternetOutageProvider implements EventProvider {
         },
         magnitude: {
           value: row.score ?? null,
-          unit: row.score === null || row.score === undefined ? null : "IODA score",
-          description: row.score === null || row.score === undefined ? null : "IODA outage event score",
+          unit:
+            row.score === null || row.score === undefined ? null : "IODA score",
+          description:
+            row.score === null || row.score === undefined
+              ? null
+              : "IODA outage event score",
         },
         source: {
           provider: this.id,
