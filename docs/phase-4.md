@@ -29,6 +29,14 @@ Current limitations:
 - Geographic relevance is still validated by the deterministic ranking layer after retrieval.
 - A second provider for official alerts is still required before context can be considered independently corroborated.
 
+## Phase 4C — signal context API
+
+`GET /api/signals/:id/context?mode=live` builds an investigation for a stored signal and retrieves GDELT context. The endpoint is dynamic and uncached so contextual evidence can evolve after the anomaly is first detected.
+
+`mode=demo` never performs external retrieval by default. It returns the deterministic `NO EXPLANATION FOUND YET` state unless an explicit provider is injected in tests. This preserves the existing rule that demo data and live evidence never silently mix.
+
+The API currently computes investigations on request. Persistence, correlated-event investigations and scheduled refresh are the next storage/operations increment.
+
 ## Epistemic rules
 
 - Retrieved articles or alerts are contextual evidence, not proof of causality.
@@ -40,7 +48,7 @@ Current limitations:
 
 ## Next increments
 
-- Phase 4C: add an official-alert provider and distinguish `reported` from `independently_confirmed` context.
-- Phase 4D: persist investigations and expose them through an API.
-- Phase 4E: add the investigation timeline panel to the globe UI.
-- Phase 4F: optional LLM briefing over the deterministic evidence package, with citation coverage checks and `NO EXPLANATION FOUND YET` preserved.
+- Phase 4D: add an official-alert provider and distinguish `reported` from `independently_confirmed` context.
+- Phase 4E: persist investigations, add scheduled context refresh and support correlated-event IDs.
+- Phase 4F: add the investigation timeline panel to the globe UI.
+- Phase 4G: optional LLM briefing over the deterministic evidence package, with citation coverage checks and `NO EXPLANATION FOUND YET` preserved.
