@@ -73,7 +73,7 @@ export async function saveInvestigation(
         investigation.eventId,
         JSON.stringify(investigation),
         investigation.status,
-        investigation.corroborationStatus,
+        investigation.assessment,
         investigation.retrievalStatus,
         investigation.createdAt,
         now,
