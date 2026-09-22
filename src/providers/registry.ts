@@ -45,6 +45,14 @@ export const PROVIDER_REGISTRY: readonly ProviderMetadata[] = [
     operational: false,
   },
   {
+    id: "adsblol",
+    name: "ADSB.lol",
+    system: "aviation",
+    independenceGroup: "aviation-measurement",
+    sourceUrl: "https://www.adsb.lol/",
+    operational: true,
+  },
+  {
     id: "opensky",
     name: "OpenSky Network",
     system: "aviation",
