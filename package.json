@@ -17,6 +17,7 @@
     "ingest:firms": "tsx scripts/ingest.ts firms",
     "ingest:all": "tsx scripts/ingest.ts all",
     "signals:compute": "tsx scripts/compute.ts",
+    "events:refresh": "tsx scripts/events.ts",
     "worker": "tsx scripts/worker.ts",
     "db:seed": "tsx scripts/seed.ts",
     "backfill:firms": "tsx scripts/backfill-firms.ts",
