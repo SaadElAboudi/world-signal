@@ -1,9 +1,9 @@
 import "./env";
 import { closePool } from "../src/database/client";
-import { refreshEonetWorldEvents } from "../src/server/world-events";
+import { refreshAllWorldEvents } from "../src/server/world-events";
 
 async function main() {
-  const result = await refreshEonetWorldEvents({ days: 14, limit: 1000 });
+  const result = await refreshAllWorldEvents({ days: 14, limit: 1000 });
   console.log(JSON.stringify(result));
 }
 
