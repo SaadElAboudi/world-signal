@@ -2,6 +2,7 @@ import "./env";
 import { maintainCompactStorage } from "../src/database/retention";
 import { ingest, providers } from "../src/server/ingestion";
 import { computeSignals } from "../src/server/compute";
+import { refreshRecentInvestigations } from "../src/server/context-refresh";
 import { getPool, closePool } from "../src/database/client";
 import { getConfig } from "../src/server/config";
 import { log, errorCode } from "../src/server/log";
@@ -15,6 +16,7 @@ process.on("SIGTERM", () => {
 });
 async function main() {
   let lastComputed = 0;
+  let lastContextRefresh = 0;
   let lastMaintenance = 0;
   while (!stopping) {
     let failed = false;
@@ -46,6 +48,11 @@ async function main() {
       if (Date.now() - lastComputed >= 300000) {
         await computeSignals();
         lastComputed = Date.now();
+      }
+      if (Date.now() - lastContextRefresh >= 15 * 60000) {
+        const contextResult = await refreshRecentInvestigations();
+        log("context.refresh.completed", contextResult);
+        lastContextRefresh = Date.now();
       }
       if (Date.now() - lastMaintenance >= 3600000) {
         await maintainCompactStorage();
