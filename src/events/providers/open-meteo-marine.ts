@@ -73,17 +73,35 @@ function severity(deltaC: number): EventSeverity | null {
 
 export function detectSstWarming(
   hourly: MarineHourly,
+  now = new Date(),
 ): { currentC: number; baselineC: number; deltaC: number; startedAt: string; updatedAt: string; severity: EventSeverity } | null {
   const times = hourly.time ?? [];
   const values = hourly.sea_surface_temperature ?? [];
   if (times.length !== values.length || values.length < 120) return null;
-  const currentC = mean(values.slice(-6));
-  const baselineC = mean(values.slice(0, 6));
+
+  const parsed = times.map((time, index) => ({
+    time: Date.parse(`${time}Z`.replace("ZZ", "Z")),
+    value: values[index],
+  }));
+  const usable = parsed.filter(
+    (point) =>
+      Number.isFinite(point.time) &&
+      point.time <= now.getTime() &&
+      point.time >= now.getTime() - 8 * 86_400_000,
+  );
+  if (usable.length < 120) return null;
+
+  const currentWindow = usable.slice(-6);
+  const targetBaseline = currentWindow[currentWindow.length - 1].time - 7 * 86_400_000;
+  const baselineWindow = usable
+    .filter((point) => Math.abs(point.time - targetBaseline) <= 3 * 3_600_000)
+    .slice(0, 6);
+  if (baselineWindow.length < 4) return null;
+
+  const currentC = mean(currentWindow.map((point) => point.value));
+  const baselineC = mean(baselineWindow.map((point) => point.value));
   if (currentC === null || baselineC === null) return null;
-  const start = Date.parse(`${times[0]}Z`.replace("ZZ", "Z"));
-  const end = Date.parse(`${times[times.length - 1]}Z`.replace("ZZ", "Z"));
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end - start < 6 * 86_400_000)
-    return null;
+
   const deltaC = Number((currentC - baselineC).toFixed(2));
   const level = severity(deltaC);
   if (!level) return null;
@@ -91,8 +109,8 @@ export function detectSstWarming(
     currentC: Number(currentC.toFixed(2)),
     baselineC: Number(baselineC.toFixed(2)),
     deltaC,
-    startedAt: new Date(start).toISOString(),
-    updatedAt: new Date(end).toISOString(),
+    startedAt: new Date(baselineWindow[0].time).toISOString(),
+    updatedAt: new Date(currentWindow[currentWindow.length - 1].time).toISOString(),
     severity: level,
   };
 }
@@ -140,7 +158,7 @@ export class OpenMeteoMarineProvider {
       locations.forEach((location, locationIndex) => {
         const region = chunk[locationIndex];
         if (!location.hourly) return;
-        const warming = detectSstWarming(location.hourly);
+        const warming = detectSstWarming(location.hourly, now);
         if (!warming) return;
         const id = `open-meteo-marine:${region.id}:sst-warming`;
         output.push({
@@ -149,7 +167,7 @@ export class OpenMeteoMarineProvider {
           category: "climate",
           type: "water_anomaly",
           title: `Rapid sea-surface warming · +${warming.deltaC.toFixed(1)}°C / 7d`,
-          description: `${region.name} sentinel shows modelled sea-surface temperature rising from ${warming.baselineC.toFixed(1)}°C to ${warming.currentC.toFixed(1)}°C across the available seven-day window. This is a rapid-change sentinel, not a climatological marine-heatwave classification.`,
+          description: `${region.name} sentinel shows modelled sea-surface temperature rising from ${warming.baselineC.toFixed(1)}°C to ${warming.currentC.toFixed(1)}°C across comparable six-hour windows approximately seven days apart. This is a rapid-change sentinel, not a climatological marine-heatwave classification.`,
           status: "active",
           severity: warming.severity,
           confidence: 0.5,
