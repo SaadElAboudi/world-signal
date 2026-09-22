@@ -10,10 +10,11 @@ import {
   saveTemperatureReference,
   type StoredTemperatureReference,
 } from "../database/climate-reference";
+import { errorCode, log } from "./log";
 
 const REFERENCE_START = "1991-01-01";
 const REFERENCE_END = "2020-12-31";
-const MAX_NEW_REFERENCES_PER_REFRESH = 6;
+const MAX_NEW_REFERENCES_PER_REFRESH = 2;
 
 type Options = {
   fetcher?: typeof fetch;
@@ -107,14 +108,26 @@ export async function enrichWeatherWithClimatology(
       output.push(event);
       continue;
     }
-    const key = monthDay(event.startedAt);
-    let reference = await getTemperatureReference(String(event.properties.cellId), kind, key);
-    if (!reference && created < MAX_NEW_REFERENCES_PER_REFRESH) {
-      reference = await fetchReference(event, kind, options);
-      await saveTemperatureReference(reference);
-      created++;
+    try {
+      const key = monthDay(event.startedAt);
+      let reference = await getTemperatureReference(
+        String(event.properties.cellId),
+        kind,
+        key,
+      );
+      if (!reference && created < MAX_NEW_REFERENCES_PER_REFRESH) {
+        reference = await fetchReference(event, kind, options);
+        await saveTemperatureReference(reference);
+        created++;
+      }
+      output.push(reference ? applyReference(event, reference) : event);
+    } catch (error) {
+      log("climate.reference.unavailable", {
+        event: event.id,
+        code: errorCode(error),
+      });
+      output.push(event);
     }
-    output.push(reference ? applyReference(event, reference) : event);
   }
   return output;
 }
