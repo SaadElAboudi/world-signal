@@ -19,6 +19,7 @@
     "signals:compute": "tsx scripts/compute.ts",
     "events:refresh": "tsx scripts/events.ts",
     "events:internet": "tsx scripts/internet-events.ts",
+    "aviation:refresh": "tsx scripts/aviation.ts",
     "worker": "tsx scripts/worker.ts",
     "db:seed": "tsx scripts/seed.ts",
     "backfill:firms": "tsx scripts/backfill-firms.ts",
