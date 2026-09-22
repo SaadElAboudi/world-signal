@@ -86,14 +86,6 @@ async function defaultCountryLocation(code: string): Promise<CountryLocation | n
   return countryLocationCache.get(code.toUpperCase()) ?? null;
 }
 
-function severityForScore(score: number | null | undefined) {
-  if (score !== null && score !== undefined && score >= 1000)
-    return "significant" as const;
-  if (score !== null && score !== undefined && score >= 250)
-    return "elevated" as const;
-  return "notable" as const;
-}
-
 export class IodaInternetOutageProvider implements EventProvider {
   id = "ioda";
   name = "IODA";
@@ -163,7 +155,10 @@ export class IodaInternetOutageProvider implements EventProvider {
         description:
           "IODA detected a macroscopic Internet connectivity disruption from network measurements.",
         status: active ? "active" : "resolved",
-        severity: severityForScore(row.score),
+        // IODA exposes a score, but WORLD SIGNAL does not currently have a
+        // documented calibration that maps it to impact severity. Preserve the
+        // score as source evidence instead of inventing significance bands.
+        severity: "notable",
         confidence: 0.75,
         startedAt: startedAt.toISOString(),
         updatedAt: now.toISOString(),
@@ -180,7 +175,7 @@ export class IodaInternetOutageProvider implements EventProvider {
           description:
             row.score === null || row.score === undefined
               ? null
-              : "IODA outage event score",
+              : "Uncalibrated IODA outage event score",
         },
         source: {
           provider: this.id,
@@ -197,6 +192,7 @@ export class IodaInternetOutageProvider implements EventProvider {
           durationSeconds: row.duration,
           overlapsWindow: row.overlaps_window ?? false,
           geographicScope: "country",
+          severityMethod: "uncalibrated-source-score-not-used",
           causalInterpretation: false,
         },
       });
