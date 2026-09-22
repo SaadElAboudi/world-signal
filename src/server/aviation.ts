@@ -50,8 +50,8 @@ async function saveSignals(client: PoolClient, signals: WorldSignal[], now: Date
       [signals.map((signal) => signal.id), now],
     );
     await client.query(
-      "UPDATE provider_runs SET analysed_at=$2,analysis_error=NULL WHERE id=(SELECT id FROM provider_runs WHERE provider='adsblol' AND status='success' ORDER BY finished_at DESC LIMIT 1)",
-      ["adsblol", now],
+      "UPDATE provider_runs SET analysed_at=$1,analysis_error=NULL WHERE id=(SELECT id FROM provider_runs WHERE provider='adsblol' AND status='success' ORDER BY finished_at DESC LIMIT 1)",
+      [now],
     );
     await client.query(
       "DELETE FROM observations WHERE provider='adsblol' AND occurred_at < $1",
