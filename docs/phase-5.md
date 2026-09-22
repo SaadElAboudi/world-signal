@@ -72,13 +72,30 @@ The current detector uses absolute operational thresholds. It does **not** yet c
 
 Forecast-derived events expose `forecast: true`, their grid method and threshold method in properties. They should be presented as forecast extreme conditions, not observed impacts.
 
+## Phase 5C — Internet outage layer
+
+Implemented first live increment:
+
+- public IODA v2 outage-event provider behind the universal `WorldEvent` contract;
+- country-level macroscopic Internet outages normalized into `infrastructure / internet_outage` events;
+- IODA BGP and active-probing event sources are preserved as measurement provenance, not treated as causal explanations;
+- no global raw Internet time-series mirror: WORLD SIGNAL fetches IODA's promoted outage events and persists only normalized event state;
+- stable event identity from country, IODA datasource and outage start time;
+- compact country geolocation resolved from the Natural Earth GeoJSON already shipped with WORLD SIGNAL;
+- recent and long-running outages are queried with a 90-day bounded window;
+- provider failure or a missing row never implies connectivity recovery;
+- dedicated hosted refresh cadence every five minutes, separate from the 15-minute natural/weather event collector;
+- deterministic provider tests for active/resolved events, malformed payloads and unsupported geography.
+
+IODA measures global Internet connectivity using multiple infrastructure signals including BGP and active probing. Its outage event is evidence of a connectivity disruption, not evidence of why the disruption happened. Cause attribution remains the job of the Context Engine and independent evidence.
+
 ## Storage policy
 
 WORLD SIGNAL must not become a raw mirror of upstream APIs.
 
 For broad event providers like EONET, only the normalized current event state is retained. Large upstream geometry histories are compacted to the latest operational geometry summary. When state changes, one previous normalized version is archived.
 
-For high-volume providers such as weather, aviation and Internet measurements, raw samples should be ephemeral. The weather engine follows this rule now: response arrays exist only in memory while thresholds are evaluated; only promoted `WorldEvent` records reach PostgreSQL.
+For high-volume providers such as weather, aviation and Internet measurements, raw samples should be ephemeral. The weather engine follows this rule now: response arrays exist only in memory while thresholds are evaluated; only promoted `WorldEvent` records reach PostgreSQL. The IODA event layer is even lighter: it consumes promoted outage events directly rather than storing country-by-country raw measurement series.
 
 Target lifecycle:
 
@@ -90,7 +107,7 @@ Target lifecycle:
 
 Next provider families should use the same event contract:
 
-1. Internet — IODA first, then independent confirmation sources.
+1. Internet v2 — independent confirmation source (for example RIPE/Cloudflare where access and licensing fit) plus finer regional/ASN coverage.
 2. Weather/climate v2 — denser/adaptive scanning plus local climatological baselines and ensemble support.
 3. Marine anomaly engine — sea-surface temperature and marine heatwaves.
 4. Aviation — aggregate OpenSky traffic into regional time buckets; never store global aircraft positions long-term.
