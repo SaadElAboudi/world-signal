@@ -16,7 +16,7 @@
   box-shadow: 0 12px 30px rgb(0 0 0 / 22%);
   backdrop-filter: blur(12px);
   font-family: var(--mono);
-  pointer-events: auto;
+  pointer-events: none;
 }
 .summary {
   display: flex;
@@ -67,6 +67,7 @@
   background: #0d181f;
   color: #a7bac3;
   font-size: 9px;
+  pointer-events: auto;
 }
 .latest a:hover { border-color: #3a595e; background: #101d24; }
 .latest a > span { width: 5px; height: 5px; border-radius: 50%; background: #e5d785; }
