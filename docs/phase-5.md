@@ -41,15 +41,44 @@ Implemented:
 - history written only when meaningful event state changes;
 - 30-day event-change history and 35-day resolved-event retention;
 - `GET /api/events` and `GET /api/events/:id`;
-- EONET refresh integrated into the worker.
+- EONET refresh integrated into the worker and dedicated hosted event workflow.
 
-### Storage policy
+## Phase 5B — Weather & Climate Engine
+
+Implemented first increment:
+
+- Open-Meteo forecast provider behind the universal `WorldEvent` contract;
+- a deterministic global H3 resolution-0 sentinel grid with 122 cells covering the planet;
+- batched multi-coordinate requests rather than one HTTP call per cell;
+- 24-hour forecast scanning for:
+  - extreme heat: elevated from 40 °C, significant from 45 °C;
+  - extreme cold: elevated at or below -25 °C, significant at or below -35 °C;
+  - high wind: elevated from 90 km/h gusts, significant from 120 km/h;
+  - heavy rain: elevated from 50 mm/6h, significant from 80 mm/6h;
+- only promoted extreme events are persisted; raw hourly global weather arrays are discarded after evaluation;
+- deterministic event IDs by H3 cell, event class and forecast day;
+- missing forecast events are resolved only after a successful authoritative refresh;
+- upstream failure never implies a false return to normal;
+- local opt-in through `OPEN_METEO_ENABLED`;
+- hosted 15-minute event refresh cadence;
+- free and commercial Open-Meteo endpoint/API-key configuration without changing normalization code;
+- mocked provider tests and PostgreSQL lifecycle tests.
+
+### What Phase 5B does not claim yet
+
+This first weather layer is deliberately **coarse**. H3 resolution 0 is a planetary sentinel network, not a high-resolution weather warning system. A severe but geographically narrow event can fall between cell centroids.
+
+The current detector uses absolute operational thresholds. It does **not** yet claim that 40 °C in one region is statistically anomalous relative to that region's historical climate. Historical/local climatology, percentile baselines, denser adaptive grids and ensemble confidence belong to later 5B increments.
+
+Forecast-derived events expose `forecast: true`, their grid method and threshold method in properties. They should be presented as forecast extreme conditions, not observed impacts.
+
+## Storage policy
 
 WORLD SIGNAL must not become a raw mirror of upstream APIs.
 
 For broad event providers like EONET, only the normalized current event state is retained. Large upstream geometry histories are compacted to the latest operational geometry summary. When state changes, one previous normalized version is archived.
 
-For future high-volume measurement providers (weather grids, aviation positions, Internet measurements), raw samples should be ephemeral. Persist only time buckets, H3/regional aggregates, anomalies and promoted events.
+For high-volume providers such as weather, aviation and Internet measurements, raw samples should be ephemeral. The weather engine follows this rule now: response arrays exist only in memory while thresholds are evaluated; only promoted `WorldEvent` records reach PostgreSQL.
 
 Target lifecycle:
 
@@ -62,7 +91,7 @@ Target lifecycle:
 Next provider families should use the same event contract:
 
 1. Internet — IODA first, then independent confirmation sources.
-2. Weather/climate anomaly engine — heat, wind and extreme precipitation.
+2. Weather/climate v2 — denser/adaptive scanning plus local climatological baselines and ensemble support.
 3. Marine anomaly engine — sea-surface temperature and marine heatwaves.
 4. Aviation — aggregate OpenSky traffic into regional time buckets; never store global aircraft positions long-term.
 5. Power — start with open regional grid/transparency sources and expose coverage limitations explicitly.
@@ -76,4 +105,4 @@ The default product surface should evolve toward:
 - **Globe** — category-first filtering rather than dozens of provider-specific layers;
 - **Investigation** — Context Engine timeline and evidence for any promoted event.
 
-The system must always distinguish source coverage from absence of an event. No provider should be presented as global when its geographic or licensing coverage is narrower.
+The system must always distinguish source coverage from absence of an event. No provider should be presented as global at a finer resolution than it actually measures, and forecast conditions must remain distinct from observed impacts.

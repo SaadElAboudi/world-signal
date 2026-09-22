@@ -2,9 +2,9 @@
 
 **What changed?** A globe-first observatory for unusual activity and real-world events across independent planetary systems.
 
-WORLD SIGNAL connects **USGS earthquakes, NASA FIRMS fire detections and NASA EONET natural events** to PostgreSQL, deterministic analysis and an interactive globe. Live observations and the explicitly labeled synthetic demo remain separate.
+WORLD SIGNAL connects **USGS earthquakes, NASA FIRMS fire detections, NASA EONET natural events and coarse Open-Meteo extreme-weather sentinels** to PostgreSQL, deterministic analysis and an interactive globe. Live observations and the explicitly labeled synthetic demo remain separate.
 
-Phase 3 provides deterministic spatial/temporal correlation foundations. Phase 4 adds a deterministic **Context Engine** with GDELT news context and GDACS institutional evidence, ranked and deduplicated into an investigation timeline while preserving **NO EXPLANATION FOUND YET** and **CONTEXT SOURCES UNAVAILABLE**. Phase 5 introduces the additive **Universal Event Engine**: a provider-independent `WorldEvent` contract and compact current-state/history storage that can grow to natural hazards, climate, infrastructure and mobility without turning every new source into a bespoke UI model. No LLM-generated briefing is currently used. External reporting is context, never automatic proof of causality. See [Phase 3 implementation status](docs/phase-3.md), [Phase 4 Context Engine](docs/phase-4.md) and [Phase 5 Universal Event Engine](docs/phase-5.md).
+Phase 3 provides deterministic spatial/temporal correlation foundations. Phase 4 adds a deterministic **Context Engine** with GDELT news context and GDACS institutional evidence, ranked and deduplicated into an investigation timeline while preserving **NO EXPLANATION FOUND YET** and **CONTEXT SOURCES UNAVAILABLE**. Phase 5 introduces the additive **Universal Event Engine**: a provider-independent `WorldEvent` contract and compact current-state/history storage that can grow to natural hazards, climate, infrastructure and mobility without turning every new source into a bespoke UI model. Phase 5B adds a first global weather sentinel layer for extreme heat/cold, high wind and heavy rain. No LLM-generated briefing is currently used. External reporting is context, never automatic proof of causality. See [Phase 3 implementation status](docs/phase-3.md), [Phase 4 Context Engine](docs/phase-4.md) and [Phase 5 Universal Event Engine](docs/phase-5.md).
 
 ![WORLD SIGNAL live interface — real USGS and NASA FIRMS data](docs/live-preview.png)
 
@@ -36,11 +36,17 @@ In a third terminal, keep the scheduler running:
 npm run worker
 ```
 
-The long-running worker collects USGS and FIRMS according to provider cadence, recomputes signals, refreshes context investigations and refreshes NASA EONET world events. EONET refreshes are semantically deduplicated: an unchanged poll updates freshness without creating another history row. The page polls the stored signal API every minute; **CURRENT** requests a refresh.
+The long-running worker collects USGS and FIRMS according to provider cadence, recomputes signals, refreshes context investigations and refreshes universal world-event providers. EONET refreshes are semantically deduplicated: an unchanged poll updates freshness without creating another history row. Set `OPEN_METEO_ENABLED=true` to include the weather sentinel locally. The page polls the stored signal API every minute; **CURRENT** requests a refresh.
+
+World events can also be refreshed once without running the long-lived worker:
+
+```sh
+npm run events:refresh
+```
 
 For an existing PostgreSQL service, copy `.env.example` to `.env.local`, set `DATABASE_URL` and `WORLD_SIGNAL_MODE=live`, then migrate, seed, ingest and run the worker. Do not commit credentials. Production requires persistent PostgreSQL and a separate worker; the Next.js web process does not perform ingestion on page requests.
 
-The hosted setup uses Aiven PostgreSQL with compact historical storage and an hourly GitHub Actions collector. See [hosted operation and retention](docs/hosted-operations.md). The worker has internal provider-specific cadence guards; the hosted cron frequency remains an operational trade-off between freshness and runner/API cost.
+The hosted setup uses Aiven PostgreSQL with compact historical storage, an hourly observation collector and a separate **15-minute world-event collector** for EONET and weather. See [hosted operation and retention](docs/hosted-operations.md). The worker has internal provider-specific cadence guards; separate schedules avoid repeatedly running expensive or slow pipelines just to refresh faster event sources.
 
 For Vercel, follow the [production database and worker setup](docs/vercel-deployment.md). A web deployment does not create the database or start collection. Run `npm run db:check` to diagnose the configured database without printing credentials.
 
@@ -49,13 +55,14 @@ For Vercel, follow the [production database and worker setup](docs/vercel-deploy
 - [USGS GeoJSON feeds](https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php): individual events selected by configurable magnitude/significance/depth rules, plus regional count anomalies when adequate coverage exists.
 - [NASA FIRMS active-fire downloads](https://firms.modaps.eosdis.nasa.gov/active_fire/): public NOAA-20 VIIRS CSV, without a key. Detections are aggregated into H3 geographic cells and compared with covered historical windows. A detection is not a confirmed incident or burned-area estimate.
 - [NASA EONET v3](https://eonet.gsfc.nasa.gov/docs/v3): broad event metadata for categories such as wildfires, volcanoes, severe storms, floods, landslides, drought, snow and temperature extremes. WORLD SIGNAL stores the normalized current event state plus compact geometry summaries, not the full upstream geometry history.
+- [Open-Meteo Forecast API](https://open-meteo.com/en/docs): Phase 5B uses batched multiple-coordinate 24-hour forecasts at H3 resolution 0 to detect coarse global sentinels for extreme temperature, wind gusts and rolling six-hour rainfall. Only promoted extremes are persisted; raw hourly responses are discarded. This first layer uses deterministic absolute thresholds and is **not** a high-resolution warning service or local climatological anomaly model. The endpoint is configurable through `OPEN_METEO_ENDPOINT`; use the appropriate customer endpoint/API key for commercial operation.
 - [GDELT DOC 2.0](https://blog.gdeltproject.org/gdelt-doc-2-0-api-debuts/): live news-context retrieval for investigations.
 - [GDACS](https://www.gdacs.org/): institutional disaster-alert context used as an independent corroboration layer for supported event classes.
 - Public FIRMS history starts with seven days, currently yielding five to six usable reference windows. The UI reports the actual reference count and marks short histories **provisional**. A 30-day reference becomes available as ingestion accumulates coverage; missing days are never invented.
 - Optional authenticated FIRMS backfill: set `FIRMS_TRANSPORT=api` and `NASA_FIRMS_API_KEY`, then run `npm run backfill:firms`. This requests 31 days in bounded batches, subject to NASA availability and account limits.
 - Confidence describes data quality and reference support, not the probability of an incident. Internet and aviation measurement layers are not yet operational in the live UI. Their normalization foundations exist, but activation requires access, coverage and storage/cadence validation.
 
-Provider outages expose unavailable, partial or delayed states. Context retrieval separately reports whether external searches were complete, partial, unavailable or intentionally not attempted. A live failure never substitutes demo data.
+Provider outages expose unavailable, partial or delayed states. Context retrieval separately reports whether external searches were complete, partial, unavailable or intentionally not attempted. A live failure never substitutes demo data. A weather-provider failure also never resolves current weather events: missing events transition to resolved only after a successful authoritative refresh.
 
 ## Storage model
 
@@ -65,7 +72,7 @@ WORLD SIGNAL deliberately does **not** mirror every upstream raw feed indefinite
 - **WARM** — compact regional/time-bucket references and baselines for roughly a month.
 - **COLD** — normalized events, state transitions, investigation timelines and sourced evidence.
 
-`world_events` stores only the current normalized state. `world_event_history` receives a previous version only when a semantic fingerprint changes, so polling the same event repeatedly does not grow storage. Resolved events are currently retained for 35 days and event-state history for 30 days.
+`world_events` stores only the current normalized state. `world_event_history` receives a previous version only when a semantic fingerprint changes, so polling the same event repeatedly does not grow storage. Resolved events are currently retained for 35 days and event-state history for 30 days. Weather forecast arrays are evaluated in memory and discarded; only promoted extremes reach `world_events`.
 
 ## API
 
@@ -90,6 +97,7 @@ Use `/?mode=demo` or `WORLD_SIGNAL_MODE=demo` for deterministic synthetic scenar
 npm run ingest:usgs -- --history
 npm run ingest:firms -- --history
 npm run signals:compute
+npm run events:refresh
 npm test
 npm run test:db
 npm run lint
@@ -99,6 +107,6 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Database tests require an isolated database whose name ends in `_test`. The local helper creates it automatically; alternatively set `TEST_DATABASE_URL`. **Tests truncate that dedicated test database.** CI runs lint, strict TypeScript checking, unit tests, database integration tests, production build and browser tests. Browser tests start a production web server on port 3012 and cover desktop, tablet and mobile.
+Database tests require an isolated database whose name ends in `_test`. The local helper creates it automatically; alternatively set `TEST_DATABASE_URL`. **Tests truncate that dedicated test database.** CI runs lint, strict TypeScript checking, unit tests, database integration tests, production build and browser tests. Superseded PR verification runs are cancelled automatically so only the latest branch state consumes the full pipeline. Browser tests start a production web server on port 3012 and cover desktop, tablet and mobile.
 
 See [data architecture and statistical methodology](docs/data-architecture.md), [validation evidence](docs/validation.md), [Phase 1 design decisions](docs/architecture.md), [Phase 4 Context Engine](docs/phase-4.md), [Phase 5 Universal Event Engine](docs/phase-5.md), and [asset credits](docs/credits.md).

@@ -85,6 +85,27 @@ export async function upsertWorldEvents(events: WorldEvent[], now = new Date()) 
   }
 }
 
+export async function resolveMissingProviderEvents(provider: string, activeIds: string[], now = new Date()) {
+  const result = await getPool().query(
+    "SELECT payload FROM world_events WHERE provider=$1 AND status='active' AND NOT (id = ANY($2::text[]))",
+    [provider, activeIds],
+  );
+  if (!result.rowCount) return 0;
+  const endedAt = now.toISOString();
+  const resolved = result.rows.map((row) => {
+    const event = row.payload as WorldEvent;
+    return {
+      ...event,
+      status: "resolved" as const,
+      updatedAt: endedAt,
+      endedAt,
+      properties: { ...event.properties, resolvedBecauseMissingFromProvider: true },
+    } satisfies WorldEvent;
+  });
+  await upsertWorldEvents(resolved, now);
+  return resolved.length;
+}
+
 export async function listWorldEvents(options: {
   category?: EventCategory;
   type?: EventType;
