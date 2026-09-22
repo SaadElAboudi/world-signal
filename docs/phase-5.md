@@ -104,7 +104,7 @@ Implemented first increment:
 - climatology stores only mean, standard deviation, p10, p90, sample count and reference dates in PostgreSQL;
 - historical arrays are discarded immediately after the compact statistics are computed;
 - cache identity is H3 cell + heat/cold + month/day, so the same 30-year baseline is not downloaded at every 15-minute weather refresh;
-- at most six new climatology cache misses are populated per weather refresh to bound external load;
+- at most two new climatology cache misses are populated per weather refresh to bound external load and workflow duration;
 - events expose signed temperature anomaly and z-score as contextual properties while retaining the original deterministic extreme-weather selection rule;
 - 24 fixed ocean-basin sentinels query Open-Meteo Marine SST hourly through a dedicated refresh;
 - only a seven-day rapid SST increase of at least 2 °C becomes `climate / water_anomaly`;
