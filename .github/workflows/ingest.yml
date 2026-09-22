@@ -13,7 +13,7 @@ jobs:
     if: vars.WORLD_SIGNAL_INGEST_ENABLED == 'true'
     runs-on: ubuntu-latest
     # Bound scheduled runner usage; delayed/missed jobs remain visible as stale data.
-    timeout-minutes: 2
+    timeout-minutes: 3
     env:
       DATABASE_URL: ${{ secrets.WORLD_SIGNAL_DATABASE_URL }}
       DATABASE_SSL_CA: ${{ secrets.WORLD_SIGNAL_DATABASE_CA }}
@@ -33,5 +33,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - name: Ingest due providers, recompute signals and apply retention
+      - name: Apply pending database migrations
+        run: npm run db:migrate
+      - name: Ingest due providers, recompute signals and refresh context
         run: npm run worker -- --once ${{ github.event_name == 'workflow_dispatch' && '--force' || '' }}
