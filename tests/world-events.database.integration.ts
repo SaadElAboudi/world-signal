@@ -4,6 +4,10 @@ import assert from "node:assert/strict";
 import { migrate } from "../scripts/migrate";
 import { closePool, getPool } from "../src/database/client";
 import {
+  getTemperatureReference,
+  saveTemperatureReference,
+} from "../src/database/climate-reference";
+import {
   getWorldEvent,
   resolveMissingProviderEvents,
   upsertWorldEvents,
@@ -51,7 +55,9 @@ const event: WorldEvent = {
 
 before(async () => {
   await migrate();
-  await getPool().query("TRUNCATE world_event_history, world_events RESTART IDENTITY");
+  await getPool().query(
+    "TRUNCATE climate_references, world_event_history, world_events RESTART IDENTITY",
+  );
 });
 
 after(async () => {
@@ -143,4 +149,33 @@ test("provider events absent from the next authoritative refresh resolve once", 
     [weather.id],
   );
   assert.equal(Number(history.rows[0].count), 1);
+});
+
+test("climate reference cache stores compact statistics only", async () => {
+  await saveTemperatureReference({
+    cellId: "8001fffffffffff",
+    kind: "heat",
+    monthDay: "09-22",
+    meanC: 31.4,
+    stddevC: 2.8,
+    p10C: 27.9,
+    p90C: 35.2,
+    sampleCount: 450,
+    referenceStart: "1991-01-01",
+    referenceEnd: "2020-12-31",
+  });
+  const stored = await getTemperatureReference(
+    "8001fffffffffff",
+    "heat",
+    "09-22",
+  );
+  assert(stored);
+  assert.equal(stored.meanC, 31.4);
+  assert.equal(stored.sampleCount, 450);
+  const columns = await getPool().query(
+    "SELECT column_name FROM information_schema.columns WHERE table_name='climate_references'",
+  );
+  const names = columns.rows.map((row) => row.column_name);
+  assert.equal(names.includes("payload"), false);
+  assert.equal(names.includes("raw_data"), false);
 });

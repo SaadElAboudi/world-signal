@@ -222,6 +222,7 @@ export class OpenMeteoExtremeWeatherProvider {
               forecastHorizonHours: HORIZON_HOURS,
               grid: "h3-r0-centroid",
               cellId,
+              extremeKind: extreme.kind,
               collectedAt: now.toISOString(),
               thresholdMethod: "absolute-extreme-v1",
             },
