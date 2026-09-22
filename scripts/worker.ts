@@ -3,7 +3,7 @@ import { maintainCompactStorage } from "../src/database/retention";
 import { ingest, providers } from "../src/server/ingestion";
 import { computeSignals } from "../src/server/compute";
 import { refreshRecentInvestigations } from "../src/server/context-refresh";
-import { refreshEonetWorldEvents } from "../src/server/world-events";
+import { refreshAllWorldEvents } from "../src/server/world-events";
 import { getPool, closePool } from "../src/database/client";
 import { getConfig } from "../src/server/config";
 import { log, errorCode } from "../src/server/log";
@@ -53,13 +53,17 @@ async function main() {
         lastComputed = Date.now();
       }
       if (eventRefreshEnabled && Date.now() - lastEventRefresh >= 15 * 60000) {
-        const events = await refreshEonetWorldEvents({ days: 14, limit: 1000 });
-        log("events.eonet.refresh.completed", {
-          status: events.status,
-          received: events.received,
-          inserted: events.inserted,
-          updated: events.updated,
-          unchanged: events.unchanged,
+        const events = await refreshAllWorldEvents({ days: 14, limit: 1000 });
+        log("events.refresh.completed", {
+          providers: events.providers.map((provider) => ({
+            provider: provider.provider,
+            status: provider.status,
+            received: provider.received,
+            inserted: provider.inserted,
+            updated: provider.updated,
+            unchanged: provider.unchanged,
+            resolved: provider.resolved,
+          })),
         });
         lastEventRefresh = Date.now();
       }
