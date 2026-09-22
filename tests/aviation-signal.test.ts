@@ -32,7 +32,7 @@ function point(id: string, timestamp: string, value: number): Observation {
 }
 
 function matchedHistory(value = 40) {
-  return Array.from({ length: 10 }, (_, i) => {
+  return Array.from({ length: 14 }, (_, i) => {
     const daysAgo = i + 1;
     const date = new Date(now.getTime() - daysAgo * 86_400_000);
     return point(`history-${i}`, date.toISOString(), value);
