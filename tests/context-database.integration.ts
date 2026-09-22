@@ -34,10 +34,10 @@ const base: Investigation = {
   location: { country: "France", region: "Normandy", latitude: 49.18, longitude: -0.37 },
   status: "no_explanation_found_yet",
   retrievalStatus: "complete",
+  assessment: "none",
   providers: [{ providerId: "fixture", status: "ok", evidenceCount: 0 }],
   evidence: [],
   explanationConfidence: { score: 0, level: "none", rationale: "No evidence." },
-  corroborationStatus: "none",
   timeline: [{ timestamp: "2026-09-22T09:00:00.000Z", kind: "signal", label: "earthquake anomaly detected", signalId: "signal-context-db" }],
   unknowns: ["Causality has not been established."],
 };
@@ -70,7 +70,7 @@ test("refresh preserves the previous investigation in history", async () => {
     ...base,
     createdAt: "2026-09-22T10:20:00.000Z",
     status: "context_found",
-    corroborationStatus: "official_report_found",
+    assessment: "official_report_found",
     explanationConfidence: { score: 0.78, level: "moderate", rationale: "Official context found." },
   };
   await saveInvestigation("signal", updated, { now: new Date("2026-09-22T10:20:00.000Z") });
@@ -78,5 +78,5 @@ test("refresh preserves the previous investigation in history", async () => {
   assert.equal(history.length, 1);
   assert.equal(history[0]?.investigation.status, "no_explanation_found_yet");
   const current = await getPersistedInvestigation("signal", base.eventId, { allowStale: true });
-  assert.equal(current?.corroborationStatus, "official_report_found");
+  assert.equal(current?.assessment, "official_report_found");
 });
