@@ -3,6 +3,7 @@ import { maintainCompactStorage } from "../src/database/retention";
 import { ingest, providers } from "../src/server/ingestion";
 import { computeSignals } from "../src/server/compute";
 import { refreshRecentInvestigations } from "../src/server/context-refresh";
+import { refreshEonetWorldEvents } from "../src/server/world-events";
 import { getPool, closePool } from "../src/database/client";
 import { getConfig } from "../src/server/config";
 import { log, errorCode } from "../src/server/log";
@@ -17,6 +18,7 @@ process.on("SIGTERM", () => {
 async function main() {
   let lastComputed = 0;
   let lastContextRefresh = 0;
+  let lastEventRefresh = 0;
   let lastMaintenance = 0;
   while (!stopping) {
     let failed = false;
@@ -48,6 +50,17 @@ async function main() {
       if (Date.now() - lastComputed >= 300000) {
         await computeSignals();
         lastComputed = Date.now();
+      }
+      if (Date.now() - lastEventRefresh >= 15 * 60000) {
+        const events = await refreshEonetWorldEvents({ days: 14, limit: 1000 });
+        log("events.eonet.refresh.completed", {
+          status: events.status,
+          received: events.received,
+          inserted: events.inserted,
+          updated: events.updated,
+          unchanged: events.unchanged,
+        });
+        lastEventRefresh = Date.now();
       }
       if (Date.now() - lastContextRefresh >= 15 * 60000) {
         const contextResult = await refreshRecentInvestigations();
