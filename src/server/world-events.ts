@@ -1,6 +1,7 @@
 import type { EventCategory, EventProvider, EventType } from "../events/types";
 import { EonetEventProvider } from "../events/providers/eonet";
 import { OpenMeteoExtremeWeatherProvider } from "../events/providers/open-meteo";
+import { IodaInternetOutageProvider } from "../events/providers/ioda";
 import { getPool } from "../database/client";
 import {
   getWorldEvent,
@@ -91,13 +92,32 @@ export async function refreshWeatherWorldEvents(options: RefreshOptions = {}) {
   );
 }
 
+export async function refreshInternetWorldEvents(options: RefreshOptions = {}) {
+  if (process.env.IODA_ENABLED === "false")
+    return {
+      provider: "ioda",
+      status: "disabled" as const,
+      received: 0,
+      inserted: 0,
+      updated: 0,
+      unchanged: 0,
+      resolved: 0,
+    };
+  const endpoint = process.env.IODA_ENDPOINT || undefined;
+  return refreshProvider(
+    new IodaInternetOutageProvider({ endpoint }),
+    { ...options, days: options.days ?? 90, limit: options.limit ?? 1000 },
+  );
+}
+
 export async function refreshAllWorldEvents(options: RefreshOptions = {}) {
   const eonet = await refreshEonetWorldEvents({
     ...options,
     days: options.days ?? 14,
   });
   const weather = await refreshWeatherWorldEvents(options);
-  return { status: "success" as const, providers: [eonet, weather] };
+  const internet = await refreshInternetWorldEvents(options);
+  return { status: "success" as const, providers: [eonet, weather, internet] };
 }
 
 export async function queryWorldEvents(params: URLSearchParams) {

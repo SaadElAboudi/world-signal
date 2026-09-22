@@ -18,6 +18,7 @@ jobs:
       DATABASE_SSL_CA: ${{ secrets.WORLD_SIGNAL_DATABASE_CA }}
       DATABASE_POOL_MAX: "2"
       WORLD_SIGNAL_MODE: live
+      IODA_ENABLED: "false"
       OPEN_METEO_ENABLED: "true"
       OPEN_METEO_ENDPOINT: ${{ vars.OPEN_METEO_ENDPOINT || 'https://api.open-meteo.com/v1/forecast' }}
       OPEN_METEO_API_KEY: ${{ secrets.OPEN_METEO_API_KEY }}
