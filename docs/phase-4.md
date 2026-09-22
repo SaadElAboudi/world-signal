@@ -31,11 +31,9 @@ The provider is deliberately isolated from the investigation engine and accepts 
 
 ## Phase 4C — signal context API
 
-`GET /api/signals/:id/context?mode=live` builds an investigation for a stored signal. The endpoint is dynamic and uncached so contextual evidence can evolve after the anomaly is first detected.
+`GET /api/signals/:id/context?mode=live` returns a persisted live investigation when a fresh one exists, otherwise it refreshes the investigation through the configured context providers and stores the new result.
 
-`mode=demo` never performs external retrieval by default. It returns the deterministic `NO EXPLANATION FOUND YET` state with `retrievalStatus: not_attempted`. This preserves the existing rule that demo data and live evidence never silently mix.
-
-The API currently computes investigations on request. Persistence, correlated-event investigations and scheduled refresh are the next storage/operations increment.
+`mode=demo` never performs external retrieval or uses the production investigation cache. It returns a deterministic `NO EXPLANATION FOUND YET` state with `retrievalStatus: not_attempted`. Injected providers used by tests/previews also bypass persistence so fixture evidence can never overwrite live investigations.
 
 ## Phase 4D — investigation panel
 
@@ -58,11 +56,11 @@ Implemented:
 
 - `GdacsContextProvider` queries the public GDACS event API for supported disaster classes (`EQ` for earthquakes and `WF` for wildfires).
 - GDACS results are normalized into the same evidence contract as GDELT and pass through the exact same deterministic topical/geographic/temporal ranking gate.
-- Live investigations now query **GDELT + GDACS in parallel**.
+- Live investigations query **GDELT + GDACS in parallel**.
 - Unsupported systems such as internet and aviation do not trigger meaningless GDACS requests.
 - Provider failures remain isolated: a GDACS outage cannot erase valid GDELT evidence, and vice versa.
 
-The investigation exposes an explicit `assessment` distinct from `status` and `explanationConfidence`:
+The investigation exposes an explicit corroboration state distinct from `status` and `explanationConfidence`:
 
 - `none` — no sufficiently relevant external context;
 - `reported` — relevant external reporting exists, but no official alert was retrieved;
@@ -73,13 +71,33 @@ The UI renders these as `POSSIBLE CONTEXT FOUND`, `OFFICIAL REPORT FOUND` and `I
 
 **Important:** even `independently_corroborated` is not causal confirmation. It means independent contextual evidence exists around the same observed anomaly. WORLD SIGNAL still does not claim that the anomaly caused the reported event, or vice versa.
 
+## Phase 4F — persistence and scheduled refresh
+
+Implemented:
+
+- `context_investigations` stores the current investigation for a `signal` or `correlated_event` subject.
+- `context_investigation_history` captures the previous version before each refresh so investigation evolution is not overwritten.
+- persisted investigations carry an expiry timestamp; live API reads reuse only fresh context.
+- the production worker refreshes expired investigations for a bounded set of recent unresolved signals after signal computation.
+- a PostgreSQL advisory lock prevents duplicate context-refresh workers from running concurrently.
+- old investigation history is pruned separately from the current investigation state.
+- the persistence API is generic across `signal` and `correlated_event`, and `getCorrelatedEventInvestigation` can build/cache an investigation when a correlated event and its member signals are supplied.
+- deterministic demo/test providers never read or write the production cache.
+
+This preserves the evidence evolution needed for later replay, for example:
+
+`anomaly detected → reporting found → official alert found → independently corroborated`
+
+without pretending that a later evidence state existed at the original detection time.
+
 ## Current limitations
 
 - GDELT DOC searches only its recent coverage window; it is not the historical replay store.
 - GDACS covers supported disaster categories, not internet or aviation disruptions.
 - GDACS is an institutional alert layer, but its presence does not establish causal identity with a WORLD SIGNAL anomaly.
-- Geographic and topical relevance are validated by the deterministic ranking layer after retrieval.
-- Investigations are still computed on request rather than persisted and refreshed over time.
+- geographic and topical relevance are validated by the deterministic ranking layer after retrieval.
+- correlated events are not yet persisted as first-class database entities; their investigation cache is ready once a correlated event object is supplied.
+- investigation history records refresh states, but Phase 4G still needs strict replay cutoffs so future evidence cannot leak backward in time.
 
 ## Epistemic rules
 
@@ -91,10 +109,10 @@ The UI renders these as `POSSIBLE CONTEXT FOUND`, `OFFICIAL REPORT FOUND` and `I
 - Source quality affects ranking but does not make a source automatically true.
 - Official reporting strengthens contextual support but does not create causal certainty.
 - Contextual-support confidence is not causal confidence or incident probability.
+- A persisted later investigation must never be treated as evidence that was known earlier.
 - The future LLM layer may summarize only the supplied evidence package and must preserve source links, timestamps and unknowns.
 
 ## Next increments
 
-- Phase 4F: persist investigations, add scheduled context refresh and support correlated-event IDs.
-- Phase 4G: add historical context replay using only evidence available at each replay timestamp.
+- Phase 4G: add strict historical context replay using only evidence available at each replay timestamp.
 - Phase 4H: optional LLM briefing over the deterministic evidence package, with citation coverage checks and `NO EXPLANATION FOUND YET` preserved.
