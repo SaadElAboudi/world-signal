@@ -1,0 +1,31 @@
+name: Refresh world events
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: world-signal-production-events
+  cancel-in-progress: false
+jobs:
+  events:
+    if: vars.WORLD_SIGNAL_INGEST_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      DATABASE_URL: ${{ secrets.WORLD_SIGNAL_DATABASE_URL }}
+      DATABASE_SSL_CA: ${{ secrets.WORLD_SIGNAL_DATABASE_CA }}
+      DATABASE_POOL_MAX: "2"
+      WORLD_SIGNAL_MODE: live
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Apply database migrations
+        run: npm run db:migrate
+      - name: Refresh normalized world events
+        run: npm run events:refresh
