@@ -1,5 +1,6 @@
 import type { ContextProvider } from "../context/evidence";
 import { buildInvestigation } from "../context/investigation";
+import { GdacsContextProvider } from "../context/providers/gdacs";
 import { GdeltContextProvider } from "../context/providers/gdelt";
 import { getSignal } from "./snapshot";
 
@@ -10,7 +11,11 @@ export async function getSignalInvestigation(
 ) {
   const signal = await getSignal(id, mode);
   if (!signal) return null;
-  const activeProviders = providers ?? (mode === "live" ? [new GdeltContextProvider()] : []);
+  const activeProviders = providers ?? (
+    mode === "live"
+      ? [new GdeltContextProvider(), new GdacsContextProvider()]
+      : []
+  );
   return buildInvestigation(signal, {
     providers: activeProviders,
     signals: [signal],
