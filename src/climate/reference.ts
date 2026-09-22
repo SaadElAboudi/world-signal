@@ -20,9 +20,18 @@ function finite(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function dayOfYear(date: Date) {
-  const start = Date.UTC(date.getUTCFullYear(), 0, 1);
-  return Math.floor((Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) - start) / 86_400_000) + 1;
+// Project month/day onto one fixed leap year so the same calendar date has the
+// same seasonal index in every historical year. This prevents post-February
+// samples in leap years from shifting by one day relative to non-leap years.
+function seasonalDay(date: Date) {
+  const year = 2000;
+  const start = Date.UTC(year, 0, 1);
+  return (
+    Math.floor(
+      (Date.UTC(year, date.getUTCMonth(), date.getUTCDate()) - start) /
+        86_400_000,
+    ) + 1
+  );
 }
 
 function circularDistance(a: number, b: number, days = 366) {
@@ -47,22 +56,29 @@ export function temperatureReferenceFromArchive(
 ): TemperatureReference {
   const daily = payload.daily;
   if (!daily?.time) throw new Error("Missing archive daily data");
-  const values = kind === "heat" ? daily.temperature_2m_max : daily.temperature_2m_min;
+  const values =
+    kind === "heat" ? daily.temperature_2m_max : daily.temperature_2m_min;
   if (!values || values.length !== daily.time.length)
     throw new Error("Incomplete archive temperature data");
-  const targetDoy = dayOfYear(targetDate);
+  const targetSeasonalDay = seasonalDay(targetDate);
   const samples: number[] = [];
   daily.time.forEach((value, index) => {
     const date = new Date(`${value}T00:00:00Z`);
     if (!Number.isFinite(date.getTime())) return;
     if (date.getUTCFullYear() < 1991 || date.getUTCFullYear() > 2020) return;
-    if (circularDistance(dayOfYear(date), targetDoy) > windowDays) return;
+    if (
+      circularDistance(seasonalDay(date), targetSeasonalDay) > windowDays
+    )
+      return;
     const candidate = values[index];
     if (finite(candidate)) samples.push(candidate);
   });
-  if (samples.length < 300) throw new Error("Insufficient ERA5 climatology samples");
+  if (samples.length < 300)
+    throw new Error("Insufficient ERA5 climatology samples");
   const mean = samples.reduce((sum, value) => sum + value, 0) / samples.length;
-  const variance = samples.reduce((sum, value) => sum + (value - mean) ** 2, 0) / samples.length;
+  const variance =
+    samples.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
+    samples.length;
   const sorted = [...samples].sort((a, b) => a - b);
   return {
     meanC: Number(mean.toFixed(2)),
@@ -73,7 +89,10 @@ export function temperatureReferenceFromArchive(
   };
 }
 
-export function temperatureAnomaly(valueC: number, reference: TemperatureReference) {
+export function temperatureAnomaly(
+  valueC: number,
+  reference: TemperatureReference,
+) {
   const deltaC = valueC - reference.meanC;
   const zscore = reference.stddevC > 0 ? deltaC / reference.stddevC : null;
   return {
