@@ -1,6 +1,7 @@
 import type { EventCategory, EventProvider, EventType, WorldEvent } from "../events/types";
 import { EonetEventProvider } from "../events/providers/eonet";
 import { OpenMeteoExtremeWeatherProvider } from "../events/providers/open-meteo";
+import { OpenMeteoMarineProvider } from "../events/providers/open-meteo-marine";
 import { IodaInternetOutageProvider } from "../events/providers/ioda";
 import { getPool } from "../database/client";
 import { enrichWeatherWithClimatology } from "./climate";
@@ -99,6 +100,26 @@ export async function refreshWeatherWorldEvents(options: RefreshOptions = {}) {
         endpoint: archiveEndpoint,
         apiKey,
       }),
+  );
+}
+
+export async function refreshMarineWorldEvents(options: RefreshOptions = {}) {
+  if (process.env.OPEN_METEO_MARINE_ENABLED === "false")
+    return {
+      provider: "open-meteo-marine",
+      status: "disabled" as const,
+      received: 0,
+      inserted: 0,
+      updated: 0,
+      unchanged: 0,
+      resolved: 0,
+    };
+  const endpoint = process.env.OPEN_METEO_MARINE_ENDPOINT || undefined;
+  const apiKey = process.env.OPEN_METEO_API_KEY || undefined;
+  return refreshProvider(
+    new OpenMeteoMarineProvider({ endpoint, apiKey }),
+    options,
+    true,
   );
 }
 
