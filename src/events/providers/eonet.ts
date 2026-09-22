@@ -106,7 +106,7 @@ export class EonetEventProvider implements EventProvider {
     const days = Math.max(1, Math.min(30, options.days ?? 7));
     const limit = Math.max(1, Math.min(1000, options.limit ?? 500));
     const url = new URL("https://eonet.gsfc.nasa.gov/api/v3/events");
-    url.searchParams.set("status", "open");
+    url.searchParams.set("status", "all");
     url.searchParams.set("days", String(days));
     url.searchParams.set("limit", String(limit));
     const { text } = await fetchText(url.toString(), { fetcher: this.fetcher, attempts: 2, timeoutMs: 30_000 });
@@ -135,7 +135,7 @@ export class EonetEventProvider implements EventProvider {
         severity: severityFor(raw, mapped.type),
         confidence: 0.8,
         startedAt: raw.geometry?.[0]?.date ?? latestGeometry.date,
-        updatedAt: latestGeometry.date ?? now.toISOString(),
+        updatedAt: raw.closed ?? latestGeometry.date ?? now.toISOString(),
         endedAt: raw.closed ?? null,
         location,
         magnitude: {
