@@ -8,6 +8,11 @@ export type InvestigationStatus =
   | "context_unavailable";
 export type ContextRetrievalStatus = "not_attempted" | "complete" | "partial" | "unavailable";
 export type ExplanationConfidenceLevel = "none" | "low" | "moderate" | "strong";
+export type ContextAssessment =
+  | "none"
+  | "reported"
+  | "official_report_found"
+  | "independently_corroborated";
 
 type InvestigationLocation = {
   country: string | null;
@@ -60,6 +65,7 @@ export interface Investigation {
   location: InvestigationLocation;
   status: InvestigationStatus;
   retrievalStatus: ContextRetrievalStatus;
+  assessment: ContextAssessment;
   providers: ContextProviderResult[];
   evidence: RankedContextEvidence[];
   explanationConfidence: ExplanationConfidence;
@@ -87,9 +93,14 @@ function eventTypes(event: WorldSignal | CorrelatedEvent): SignalType[] {
   return "signalIds" in event ? event.signalTypes : [event.type];
 }
 
+function isOfficialSource(source: ContextEvidence["source"]) {
+  const normalized = `${source.name} ${source.url}`.toLowerCase();
+  return /(gdacs|\.gov\b|\.gov\.|\.gouv\.fr\b|government|official|authority|agency|ministry|prefecture|police|fire brigade|usgs|nasa|european commission|united nations|\bun\b)/.test(normalized);
+}
+
 function sourceTrust(source: ContextEvidence["source"]) {
   const normalized = `${source.name} ${source.url}`.toLowerCase();
-  if (/(\.gov\b|\.gov\.|\.gouv\.fr\b|government|official|authority|agency|ministry|prefecture|police|fire brigade|usgs|nasa)/.test(normalized)) return 1;
+  if (isOfficialSource(source)) return 1;
   if (/(reuters|associated press|\bap\b|afp|bbc|guardian|nytimes|new york times|le monde|franceinfo)/.test(normalized)) return 0.9;
   return 0.4;
 }
@@ -206,6 +217,27 @@ function canonicalEvidenceUrl(rawUrl: string) {
   }
 }
 
+function sourceDomain(item: RankedContextEvidence) {
+  try {
+    return new URL(item.source.url).hostname.toLowerCase();
+  } catch {
+    return item.source.name.toLowerCase();
+  }
+}
+
+function buildContextAssessment(evidence: RankedContextEvidence[]): ContextAssessment {
+  if (!evidence.length) return "none";
+  const official = evidence.filter((item) => isOfficialSource(item.source));
+  const nonOfficial = evidence.filter((item) => !isOfficialSource(item.source));
+  if (official.length && nonOfficial.length) {
+    const officialDomains = new Set(official.map(sourceDomain));
+    const independentNonOfficial = nonOfficial.some((item) => !officialDomains.has(sourceDomain(item)));
+    if (independentNonOfficial) return "independently_corroborated";
+  }
+  if (official.length) return "official_report_found";
+  return "reported";
+}
+
 function buildExplanationConfidence(evidence: RankedContextEvidence[]): ExplanationConfidence {
   if (!evidence.length) {
     return {
@@ -217,18 +249,11 @@ function buildExplanationConfidence(evidence: RankedContextEvidence[]): Explanat
 
   const strongest = evidence.slice(0, 3);
   const relevance = strongest.reduce((sum, item) => sum + item.score, 0) / strongest.length;
-  const domains = new Set(
-    strongest.map((item) => {
-      try {
-        return new URL(item.source.url).hostname.toLowerCase();
-      } catch {
-        return item.source.name.toLowerCase();
-      }
-    }),
-  );
+  const domains = new Set(strongest.map(sourceDomain));
   const diversity = clamp(domains.size / 2);
   const volume = clamp(strongest.length / 3);
-  const score = Number((relevance * 0.65 + diversity * 0.2 + volume * 0.15).toFixed(4));
+  const officialSupport = strongest.some((item) => isOfficialSource(item.source)) ? 1 : 0;
+  const score = Number((relevance * 0.55 + diversity * 0.15 + volume * 0.1 + officialSupport * 0.2).toFixed(4));
   const level: ExplanationConfidenceLevel = score >= 0.85
     ? "strong"
     : score >= 0.65
@@ -238,7 +263,7 @@ function buildExplanationConfidence(evidence: RankedContextEvidence[]): Explanat
   return {
     score,
     level,
-    rationale: `${strongest.length} relevant evidence item${strongest.length === 1 ? "" : "s"} across ${domains.size} independent source domain${domains.size === 1 ? "" : "s"}. This measures contextual support, not causality or incident probability.`,
+    rationale: `${strongest.length} relevant evidence item${strongest.length === 1 ? "" : "s"} across ${domains.size} independent source domain${domains.size === 1 ? "" : "s"}${officialSupport ? ", including official reporting" : ""}. This measures contextual support, not causality or incident probability.`,
   };
 }
 
@@ -289,6 +314,7 @@ export async function buildInvestigation(
     .filter((item) => item.score >= 0.45 && item.scoreBreakdown.topical > 0)
     .sort((a, b) => b.score - a.score || Date.parse(a.publishedAt) - Date.parse(b.publishedAt))
     .slice(0, maxEvidence);
+  const assessment = buildContextAssessment(evidence);
   const explanationConfidence = buildExplanationConfidence(evidence);
   const timeline = [
     ...signalTimeline(event, options.signals ?? []),
@@ -315,6 +341,7 @@ export async function buildInvestigation(
     location: eventLocation(event),
     status,
     retrievalStatus,
+    assessment,
     providers,
     evidence,
     explanationConfidence,
@@ -322,6 +349,7 @@ export async function buildInvestigation(
     unknowns: [
       "No causal relationship is implied by temporal or geographic proximity.",
       "External reporting may be incomplete, delayed, duplicated or incorrect.",
+      "Official reporting is stronger contextual evidence but still does not prove that the observed anomaly and reported event share a cause.",
       "Explanation confidence measures the strength of retrieved contextual support, not the probability that a proposed cause is true.",
       "NO EXPLANATION FOUND YET means no sufficiently relevant context was retrieved from the sources that were successfully searched, not that no explanation exists.",
     ],
