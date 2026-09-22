@@ -38,7 +38,9 @@ test("IODA outage provider emits compact infrastructure events", async () => {
   assert.equal(event.category, "infrastructure");
   assert.equal(event.type, "internet_outage");
   assert.equal(event.status, "active");
-  assert.equal(event.severity, "significant");
+  assert.equal(event.severity, "notable");
+  assert.equal(event.magnitude.value, 1200);
+  assert.equal(event.properties.severityMethod, "uncalibrated-source-score-not-used");
   assert.equal(event.source.provider, "ioda");
   assert.equal(event.properties.countryCode, "IR");
   assert.equal(event.properties.datasource, "ping-slash24");
@@ -75,13 +77,17 @@ test("IODA outage provider resolves old events and skips unsupported geography",
   const events = await provider.fetchEvents({ now });
   assert.equal(events.length, 1);
   assert.equal(events[0].status, "resolved");
-  assert.equal(events[0].endedAt, new Date((nowSeconds - 5400) * 1000).toISOString());
-  assert.equal(events[0].severity, "elevated");
+  assert.equal(
+    events[0].endedAt,
+    new Date((nowSeconds - 5400) * 1000).toISOString(),
+  );
+  assert.equal(events[0].severity, "notable");
 });
 
 test("IODA outage provider fails closed on malformed upstream responses", async () => {
   const provider = new IodaInternetOutageProvider({
-    fetchImpl: (async () => response([{ datasource: "bgp", location: "country/IR" }])) as typeof fetch,
+    fetchImpl: (async () =>
+      response([{ datasource: "bgp", location: "country/IR" }])) as typeof fetch,
     resolveLocation: async () => ({ latitude: 32, longitude: 54 }),
   });
   await assert.rejects(() => provider.fetchEvents({ now }));
