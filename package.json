@@ -20,7 +20,7 @@
     "worker": "tsx scripts/worker.ts",
     "db:seed": "tsx scripts/seed.ts",
     "backfill:firms": "tsx scripts/backfill-firms.ts",
-    "test:db": "tsx --test tests/database.integration.ts",
+    "test:db": "tsx --test --test-concurrency=1 tests/database.integration.ts tests/context-database.integration.ts",
     "db:check": "tsx scripts/check-db.ts",
     "correlations:compute": "tsx scripts/correlations.ts"
   },
@@ -41,7 +41,7 @@
     "@types/node": "^20",
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@types/react-dom": "^19.2.8",
     "@types/three": "^0.186.0",
     "embedded-postgres": "^18.4.0-beta.17",
     "eslint": "^9",
