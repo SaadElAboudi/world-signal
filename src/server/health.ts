@@ -75,7 +75,9 @@ export async function getProviderHealth(
     success.finished_at AS success_at, success.analysed_at, success.analysis_error, success.source_as_of, success.latest_observation_at, latest.records_received,latest.records_inserted,latest.records_updated
     FROM (SELECT DISTINCT ON(provider) * FROM provider_runs ORDER BY provider,started_at DESC) latest
     LEFT JOIN LATERAL (SELECT * FROM provider_runs r WHERE r.provider=latest.provider AND r.status='success' ORDER BY finished_at DESC LIMIT 1) success ON true`);
-  return ["usgs", "firms", "adsblol"].map((id) =>
+  const ids = ["usgs", "firms"];
+  if (result.rows.some((row) => row.provider === "adsblol")) ids.push("adsblol");
+  return ids.map((id) =>
     classifyHealth(
       result.rows.find((r) => r.provider === id),
       id,
