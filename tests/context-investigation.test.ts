@@ -15,25 +15,40 @@ test("returns explicit no-explanation state when a successful search returns not
   assert.equal(result.retrievalStatus, "complete");
   assert.equal(result.providers[0]?.status, "ok");
   assert.equal(result.evidence.length, 0);
+  assert.equal(result.explanationConfidence.level, "none");
+  assert.equal(result.explanationConfidence.score, 0);
   assert.equal(result.timeline[0]?.kind, "signal");
 });
 
-test("ranks timely local official evidence above weaker evidence and deduplicates urls", async () => {
+test("ranks timely local official topical evidence above weaker evidence and deduplicates tracking urls", async () => {
   const provider: ContextProvider = { id: "fixture", async searchContext() { return [
-    { id: "official", source: { name: "Paris official authority", url: "https://example.com/official" }, publishedAt: "2026-09-22T10:08:00.000Z", retrievedAt: "2026-09-22T10:20:00.000Z", text: "Paris France local authorities issue an operational notice." },
-    { id: "weak", source: { name: "Unknown blog", url: "https://example.com/blog" }, publishedAt: "2026-09-22T21:00:00.000Z", retrievedAt: "2026-09-22T21:05:00.000Z", text: "Unrelated discussion with no location match." },
-    { id: "official-copy", source: { name: "Paris official authority", url: "https://example.com/official" }, publishedAt: "2026-09-22T10:08:00.000Z", retrievedAt: "2026-09-22T10:21:00.000Z", text: "Paris France local authorities issue an operational notice." },
+    { id: "official", source: { name: "Paris official authority", url: "https://example.com/official?utm_source=alerts" }, publishedAt: "2026-09-22T10:08:00.000Z", retrievedAt: "2026-09-22T10:20:00.000Z", text: "Paris France local authorities issue an earthquake response notice." },
+    { id: "weak", source: { name: "Unknown blog", url: "https://example.com/blog" }, publishedAt: "2026-09-22T21:00:00.000Z", retrievedAt: "2026-09-22T21:05:00.000Z", text: "Paris France earthquake discussion published much later." },
+    { id: "official-copy", source: { name: "Paris official authority", url: "https://example.com/official?utm_medium=social" }, publishedAt: "2026-09-22T10:08:00.000Z", retrievedAt: "2026-09-22T10:21:00.000Z", text: "Paris France local authorities issue an earthquake response notice." },
   ]; } };
   const result = await buildInvestigation(signal, { providers: [provider] });
   assert.equal(result.status, "context_found");
-  assert.equal(result.evidence.length, 1);
+  assert.equal(result.evidence.length, 2);
   assert.equal(result.evidence[0]?.source.url, "https://example.com/official");
-  assert.ok((result.evidence[0]?.score ?? 0) > 0.8);
+  assert.equal(result.evidence[0]?.scoreBreakdown.topical, 1);
+  assert.ok((result.evidence[0]?.score ?? 0) > (result.evidence[1]?.score ?? 0));
+  assert.notEqual(result.explanationConfidence.level, "none");
+});
+
+test("rejects nearby authoritative evidence that is not about the observed signal", async () => {
+  const provider: ContextProvider = { id: "fixture", async searchContext() { return [
+    { id: "unrelated", source: { name: "Paris official authority", url: "https://example.com/transport" }, publishedAt: "2026-09-22T10:03:00.000Z", retrievedAt: "2026-09-22T10:04:00.000Z", text: "Paris France authorities announce a new metro timetable." },
+  ]; } };
+  const result = await buildInvestigation(signal, { providers: [provider] });
+  assert.equal(result.status, "no_explanation_found_yet");
+  assert.equal(result.retrievalStatus, "complete");
+  assert.equal(result.evidence.length, 0);
+  assert.equal(result.explanationConfidence.level, "none");
 });
 
 test("provider failure does not erase successful evidence from another provider", async () => {
   const failing: ContextProvider = { id: "failing", async searchContext() { throw new Error("upstream unavailable"); } };
-  const healthy: ContextProvider = { id: "healthy", async searchContext() { return [{ id: "report", source: { name: "Reuters", url: "https://example.com/reuters" }, publishedAt: "2026-09-22T10:12:00.000Z", retrievedAt: "2026-09-22T10:13:00.000Z", text: "Paris France reporting relevant to the observed anomaly." }]; } };
+  const healthy: ContextProvider = { id: "healthy", async searchContext() { return [{ id: "report", source: { name: "Reuters", url: "https://example.com/reuters" }, publishedAt: "2026-09-22T10:12:00.000Z", retrievedAt: "2026-09-22T10:13:00.000Z", text: "Reuters reports earthquake response activity in Paris France." }]; } };
   const result = await buildInvestigation(signal, { providers: [failing, healthy] });
   assert.equal(result.status, "context_found");
   assert.equal(result.retrievalStatus, "partial");
@@ -46,4 +61,5 @@ test("all provider failures are context unavailable, never no-explanation", asyn
   assert.equal(result.status, "context_unavailable");
   assert.equal(result.retrievalStatus, "unavailable");
   assert.equal(result.providers[0]?.status, "error");
+  assert.equal(result.explanationConfidence.level, "none");
 });
