@@ -5,6 +5,8 @@ import {
   detectSstWarming,
 } from "../src/events/providers/open-meteo-marine";
 
+const now = new Date("2026-09-22T12:00:00Z");
+
 function series(startC = 20, endC = 23) {
   const time: string[] = [];
   const values: number[] = [];
@@ -17,12 +19,13 @@ function series(startC = 20, endC = 23) {
   return { time, sea_surface_temperature: values };
 }
 
-test("SST detector promotes only material seven-day warming", () => {
-  assert.equal(detectSstWarming(series(20, 21)), null);
-  const event = detectSstWarming(series(20, 23));
+test("SST detector promotes only material seven-day warming using data known by collection time", () => {
+  assert.equal(detectSstWarming(series(20, 21), now), null);
+  const event = detectSstWarming(series(20, 23), now);
   assert(event);
   assert.equal(event.severity, "notable");
   assert(event.deltaC >= 2);
+  assert(Date.parse(event.updatedAt) <= now.getTime());
 });
 
 test("marine provider emits compact climate events and discards raw series", async () => {
@@ -47,7 +50,7 @@ test("marine provider emits compact climate events and discards raw series", asy
     fetcher,
     regions,
     batchSize: 1,
-  }).fetchEvents({ now: new Date("2026-09-22T12:00:00Z") });
+  }).fetchEvents({ now });
   assert.equal(events.length, 1);
   const event = events[0];
   assert.equal(event.type, "water_anomaly");
@@ -56,6 +59,7 @@ test("marine provider emits compact climate events and discards raw series", asy
   assert.equal(event.properties.modelled, true);
   assert.equal(event.source.provider, "open-meteo-marine");
   assert.equal("hourly" in event.properties, false);
+  assert(Date.parse(event.updatedAt) <= now.getTime());
 });
 
 test("marine provider fails on location-count mismatch instead of inventing coverage", async () => {
@@ -66,7 +70,7 @@ test("marine provider fails on location-count mismatch instead of inventing cove
   const fetcher: typeof fetch = async () =>
     new Response(JSON.stringify({ hourly: series(20, 23) }), { status: 200 });
   await assert.rejects(
-    () => new OpenMeteoMarineProvider({ fetcher, regions }).fetchEvents(),
+    () => new OpenMeteoMarineProvider({ fetcher, regions }).fetchEvents({ now }),
     /location count mismatch/,
   );
 });
