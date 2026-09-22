@@ -8,6 +8,7 @@ import { getPool, closePool } from "../src/database/client";
 import { getConfig } from "../src/server/config";
 import { log, errorCode } from "../src/server/log";
 const once = process.argv.includes("--once");
+const eventRefreshEnabled = process.env.WORLD_EVENT_REFRESH_ENABLED !== "false";
 let stopping = false;
 process.on("SIGINT", () => {
   stopping = true;
@@ -51,7 +52,7 @@ async function main() {
         await computeSignals();
         lastComputed = Date.now();
       }
-      if (Date.now() - lastEventRefresh >= 15 * 60000) {
+      if (eventRefreshEnabled && Date.now() - lastEventRefresh >= 15 * 60000) {
         const events = await refreshEonetWorldEvents({ days: 14, limit: 1000 });
         log("events.eonet.refresh.completed", {
           status: events.status,
