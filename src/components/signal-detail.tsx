@@ -68,10 +68,18 @@ export function SignalDetail({ signal, onClose }: { signal: WorldSignal; onClose
   );
 }
 
+function assessmentLabel(investigation: Investigation) {
+  if (investigation.assessment === "independently_corroborated") return "INDEPENDENTLY CORROBORATED";
+  if (investigation.assessment === "official_report_found") return "OFFICIAL REPORT FOUND";
+  if (investigation.assessment === "reported") return "POSSIBLE CONTEXT FOUND";
+  return null;
+}
+
 function InvestigationPanel({ investigation, demo }: { investigation: Investigation; demo: boolean }) {
+  const corroboration = assessmentLabel(investigation);
   return <>
     <div className={`context-state ${investigation.status === "context_found" ? "context-state--found" : investigation.status === "context_unavailable" ? "context-state--error" : "context-state--unknown"}`}>
-      <span>{investigation.status === "context_found" ? "CONTEXT EVIDENCE FOUND" : investigation.status === "context_unavailable" ? "CONTEXT SOURCES UNAVAILABLE" : "NO EXPLANATION FOUND YET"}</span>
+      <span>{corroboration ?? (investigation.status === "context_unavailable" ? "CONTEXT SOURCES UNAVAILABLE" : "NO EXPLANATION FOUND YET")}</span>
       <strong>{investigation.status === "context_found" ? `${investigation.evidence.length} relevant source${investigation.evidence.length === 1 ? "" : "s"} matched the event window.` : investigation.status === "context_unavailable" ? "The configured context sources could not be searched." : demo ? "External retrieval is intentionally disabled in demo mode." : "No sufficiently relevant external evidence was retrieved from the available sources."}</strong>
       <p>Retrieval: {investigation.retrievalStatus.replace("_", " ")}. Context is evidence around the anomaly, not proof of cause.</p>
       <p>Contextual support: <b>{investigation.explanationConfidence.level.toUpperCase()}</b>{investigation.explanationConfidence.level !== "none" ? ` · ${Math.round(investigation.explanationConfidence.score * 100)}%` : ""}. {investigation.explanationConfidence.rationale}</p>
