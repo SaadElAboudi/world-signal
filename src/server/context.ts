@@ -2,6 +2,8 @@ import type { ContextProvider } from "../context/evidence";
 import { buildInvestigation, type Investigation } from "../context/investigation";
 import { GdacsContextProvider } from "../context/providers/gdacs";
 import { GdeltContextProvider } from "../context/providers/gdelt";
+import type { CorrelatedEvent } from "../correlations/types";
+import type { WorldSignal } from "../core/types";
 import {
   getPersistedInvestigation,
   saveInvestigation,
@@ -54,6 +56,32 @@ export async function refreshSignalInvestigation(
   );
   if (!investigation) return null;
   await saveInvestigation("signal", investigation, {
+    now: options.now,
+    ttlMs: options.ttlMs,
+  });
+  return investigation;
+}
+
+export async function getCorrelatedEventInvestigation(
+  event: CorrelatedEvent,
+  signals: WorldSignal[],
+  options: {
+    providers?: ContextProvider[];
+    forceRefresh?: boolean;
+    ttlMs?: number;
+    now?: Date;
+  } = {},
+) {
+  if (!options.forceRefresh) {
+    const cached = await getPersistedInvestigation("correlated_event", event.id);
+    if (cached) return cached;
+  }
+  const investigation = await buildInvestigation(event, {
+    providers: options.providers ?? DEFAULT_CONTEXT_PROVIDERS(),
+    signals,
+    now: options.now,
+  });
+  await saveInvestigation("correlated_event", investigation, {
     now: options.now,
     ttlMs: options.ttlMs,
   });
