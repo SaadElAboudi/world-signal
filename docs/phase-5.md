@@ -58,7 +58,7 @@ Implemented first increment:
 - hosted 15-minute event refresh cadence;
 - mocked provider tests and PostgreSQL lifecycle tests.
 
-This first weather layer is deliberately coarse. It uses absolute operational thresholds, not local climatological anomaly percentiles yet.
+This first weather layer is deliberately coarse.
 
 ## Phase 5C — Internet outage layer
 
@@ -93,27 +93,51 @@ Implemented first live increment:
 - upstream failure never resolves an existing aviation disruption;
 - dedicated hosted refresh cadence every 15 minutes.
 
-This is explicitly a **sentinel network**, not a complete census of global flights. A traffic reduction can result from real operational change, receiver/network coverage change or source availability. Cause attribution remains external to the detector.
+This is explicitly a **sentinel network**, not a complete census of global flights.
+
+## Phase 5E — Climate reference + ocean SST layer
+
+Implemented first increment:
+
+- promoted Open-Meteo temperature extremes can be enriched with a stable **ERA5 1991–2020** climatological reference;
+- the reference uses daily maximum temperature for heat and daily minimum temperature for cold within a ±7-calendar-day seasonal window;
+- climatology stores only mean, standard deviation, p10, p90, sample count and reference dates in PostgreSQL;
+- historical arrays are discarded immediately after the compact statistics are computed;
+- cache identity is H3 cell + heat/cold + month/day, so the same 30-year baseline is not downloaded at every 15-minute weather refresh;
+- at most six new climatology cache misses are populated per weather refresh to bound external load;
+- events expose signed temperature anomaly and z-score as contextual properties while retaining the original deterministic extreme-weather selection rule;
+- 24 fixed ocean-basin sentinels query Open-Meteo Marine SST hourly through a dedicated refresh;
+- only a seven-day rapid SST increase of at least 2 °C becomes `climate / water_anomaly`;
+- 2 °C, 3.5 °C and 5 °C seven-day SST rises map to notable, elevated and significant;
+- marine hourly arrays are evaluated in memory and discarded; only promoted normalized events are persisted;
+- marine provider failure never implies recovery;
+- the SST layer explicitly emits `marineHeatwave: false`: rapid warming is not labelled a marine heatwave without a multi-decadal SST climatology.
+
+### Climate semantics
+
+The ERA5 enrichment does **not** yet discover every possible local temperature anomaly. The global scanner still promotes temperature candidates using the Phase 5B absolute thresholds, then adds a climatological interpretation to those promoted extremes. A later adaptive anomaly scanner can use cached climatology to discover unusual temperatures even when absolute temperature is not globally extreme.
+
+The ocean layer is likewise a **rapid-change sentinel**. A formal marine-heatwave classification requires a historical SST climatology and persistence rule. Copernicus Marine reprocessed SST + NRT products are the intended next scientific source for that classification.
 
 ## Storage policy
 
 WORLD SIGNAL must not become a raw mirror of upstream APIs.
 
-For broad event providers like EONET, only normalized current event state is retained. For weather, Internet and aviation, raw upstream payloads are evaluated in memory and discarded. Aviation keeps only 15-minute regional counts for 35 days — no aircraft identity or trajectory is persisted.
+For broad event providers like EONET, only normalized current event state is retained. For weather, Internet and aviation, raw upstream payloads are evaluated in memory and discarded. Aviation keeps only 15-minute regional counts for 35 days — no aircraft identity or trajectory is persisted. Climate reference rows contain only compact statistics, and marine hourly SST arrays are never persisted.
 
 Target lifecycle:
 
 - **HOT**: short-lived observations or compact regional aggregates;
 - **WARM**: regional/time-bucket references and baselines for ~30–35 days;
-- **COLD**: normalized events, timelines and contextual evidence.
+- **COLD**: normalized events, timelines, contextual evidence and compact stable climatology statistics.
 
 ## Source roadmap
 
 Next provider families should use the same event contract:
 
-1. Internet v2 — independent confirmation source plus finer regional/ASN coverage.
-2. Weather/climate v2 — denser/adaptive scanning plus local climatological baselines and ensemble support.
-3. Marine anomaly engine — sea-surface temperature and marine heatwaves.
+1. Climate v2 — adaptive anomaly discovery beyond absolute heat/cold thresholds plus ensemble support.
+2. Marine v2 — Copernicus historical + NRT SST for formal marine-heatwave classification.
+3. Internet v2 — independent confirmation source plus finer regional/ASN coverage.
 4. Aviation v2 — denser/adaptive coverage and independent confirmation without storing aircraft tracks.
 5. Power — start with open regional grid/transparency sources and expose coverage limitations explicitly.
 
@@ -126,4 +150,4 @@ The default product surface should evolve toward:
 - **Globe** — category-first filtering rather than dozens of provider-specific layers;
 - **Investigation** — Context Engine timeline and evidence for any promoted event.
 
-The system must always distinguish source coverage from absence of an event. No provider should be presented as global at a finer resolution than it actually measures, and forecast conditions must remain distinct from observed impacts.
+The system must always distinguish source coverage from absence of an event. No provider should be presented as global at a finer resolution than it actually measures, forecast conditions must remain distinct from observed impacts, and rapid SST change must remain distinct from a climatological marine-heatwave classification.
