@@ -1,8 +1,9 @@
-import type { EventCategory, EventProvider, EventType } from "../events/types";
+import type { EventCategory, EventProvider, EventType, WorldEvent } from "../events/types";
 import { EonetEventProvider } from "../events/providers/eonet";
 import { OpenMeteoExtremeWeatherProvider } from "../events/providers/open-meteo";
 import { IodaInternetOutageProvider } from "../events/providers/ioda";
 import { getPool } from "../database/client";
+import { enrichWeatherWithClimatology } from "./climate";
 import {
   getWorldEvent,
   listWorldEvents,
@@ -20,11 +21,13 @@ const CATEGORIES = new Set<EventCategory>([
 ]);
 
 type RefreshOptions = { now?: Date; days?: number; limit?: number };
+type EventTransform = (events: WorldEvent[]) => Promise<WorldEvent[]>;
 
 async function refreshProvider(
   provider: EventProvider,
   options: RefreshOptions = {},
   resolveMissing = false,
+  transform?: EventTransform,
 ) {
   const client = await getPool().connect();
   const lockName = `world-signal:events:${provider.id}`;
@@ -44,7 +47,8 @@ async function refreshProvider(
         resolved: 0,
       };
     try {
-      const events = await provider.fetchEvents(options);
+      const fetched = await provider.fetchEvents(options);
+      const events = transform ? await transform(fetched) : fetched;
       const result = await upsertWorldEvents(events, options.now);
       const resolved = resolveMissing
         ? await resolveMissingProviderEvents(
@@ -84,11 +88,17 @@ export async function refreshWeatherWorldEvents(options: RefreshOptions = {}) {
       resolved: 0,
     };
   const endpoint = process.env.OPEN_METEO_ENDPOINT || undefined;
+  const archiveEndpoint = process.env.OPEN_METEO_ARCHIVE_ENDPOINT || undefined;
   const apiKey = process.env.OPEN_METEO_API_KEY || undefined;
   return refreshProvider(
     new OpenMeteoExtremeWeatherProvider({ endpoint, apiKey }),
     options,
     true,
+    (events) =>
+      enrichWeatherWithClimatology(events, {
+        endpoint: archiveEndpoint,
+        apiKey,
+      }),
   );
 }
 
