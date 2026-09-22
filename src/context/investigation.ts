@@ -2,18 +2,18 @@ import type { WorldSignal } from "../core/types";
 import type { CorrelatedEvent } from "../correlations/types";
 import type { ContextEvidence, ContextProvider } from "./evidence";
 
-export type InvestigationStatus =
-  | "context_pending"
-  | "no_explanation_found_yet"
-  | "context_found";
+export type InvestigationStatus = "context_pending" | "no_explanation_found_yet" | "context_found";
+
+type InvestigationLocation = {
+  country: string | null;
+  region: string | null;
+  latitude: number | null;
+  longitude: number | null;
+};
 
 export interface RankedContextEvidence extends ContextEvidence {
   score: number;
-  scoreBreakdown: {
-    temporal: number;
-    geographic: number;
-    source: number;
-  };
+  scoreBreakdown: { temporal: number; geographic: number; source: number };
   matchedTerms: string[];
 }
 
@@ -32,12 +32,7 @@ export interface Investigation {
   eventId: string;
   createdAt: string;
   window: { start: string; end: string };
-  location: {
-    country?: string | null;
-    region?: string | null;
-    latitude?: number | null;
-    longitude?: number | null;
-  };
+  location: InvestigationLocation;
   status: InvestigationStatus;
   evidence: RankedContextEvidence[];
   timeline: InvestigationTimelineEntry[];
@@ -63,15 +58,17 @@ const clamp = (value: number) => Math.max(0, Math.min(1, value));
 function eventWindow(event: WorldSignal | CorrelatedEvent) {
   return "signalIds" in event
     ? { start: event.startedAt, end: event.windowEnd }
-    : {
-        start: event.startedAt ?? event.timestamp,
-        end: event.evidence?.windowEnd ?? event.timestamp,
-      };
+    : { start: event.startedAt ?? event.timestamp, end: event.evidence?.windowEnd ?? event.timestamp };
 }
 
-function eventLocation(event: WorldSignal | CorrelatedEvent) {
+function eventLocation(event: WorldSignal | CorrelatedEvent): InvestigationLocation {
   return "signalIds" in event
-    ? event.geographicScope
+    ? {
+        country: event.geographicScope.country,
+        region: null,
+        latitude: event.geographicScope.latitude,
+        longitude: event.geographicScope.longitude,
+      }
     : {
         country: event.country,
         region: event.region,
@@ -89,10 +86,7 @@ function tokenise(value: string | null | undefined) {
     .filter((token) => token.length >= 3);
 }
 
-function scoreEvidence(
-  event: WorldSignal | CorrelatedEvent,
-  evidence: ContextEvidence,
-): RankedContextEvidence {
+function scoreEvidence(event: WorldSignal | CorrelatedEvent, evidence: ContextEvidence): RankedContextEvidence {
   const window = eventWindow(event);
   const location = eventLocation(event);
   const eventStart = Date.parse(window.start);
@@ -101,20 +95,12 @@ function scoreEvidence(
     ? Math.abs(published - eventStart) / 60000
     : Number.POSITIVE_INFINITY;
   const temporal = clamp(1 - deltaMinutes / (12 * 60));
-
   const evidenceTokens = new Set(tokenise(evidence.text));
-  const locationTokens = [
-    ...tokenise(location.country),
-    ...tokenise(location.region),
-  ];
+  const locationTokens = [...tokenise(location.country), ...tokenise(location.region)];
   const matchedTerms = locationTokens.filter((token) => evidenceTokens.has(token));
-  const geographic = locationTokens.length
-    ? clamp(matchedTerms.length / Math.max(1, locationTokens.length))
-    : 0.5;
-
+  const geographic = locationTokens.length ? clamp(matchedTerms.length / locationTokens.length) : 0.5;
   const source = sourceTrust(evidence.source.name);
   const score = Number((temporal * 0.5 + geographic * 0.3 + source * 0.2).toFixed(4));
-
   return {
     ...evidence,
     score,
@@ -130,7 +116,7 @@ function scoreEvidence(
 function signalTimeline(event: WorldSignal | CorrelatedEvent, signals: WorldSignal[]) {
   const ids = "signalIds" in event ? new Set(event.signalIds) : new Set([event.id]);
   const members = signals.filter((signal) => ids.has(signal.id));
-  const fallback = "signalIds" in event ? [] : [event];
+  const fallback: WorldSignal[] = "signalIds" in event ? [] : [event];
   const source = members.length ? members : fallback;
   return source.map<InvestigationTimelineEntry>((signal) => ({
     timestamp: signal.startedAt ?? signal.timestamp,
@@ -146,19 +132,15 @@ export async function buildInvestigation(
 ): Promise<Investigation> {
   const now = options.now ?? new Date();
   const maxEvidence = options.maxEvidence ?? 12;
-  const results = await Promise.allSettled(
-    options.providers.map((provider) => provider.searchContext(event)),
-  );
-
+  const results = await Promise.allSettled(options.providers.map((provider) => provider.searchContext(event)));
   const byUrl = new Map<string, ContextEvidence>();
+
   for (const result of results) {
     if (result.status !== "fulfilled") continue;
     for (const item of result.value) {
       if (!item.source?.url || !item.publishedAt || !item.text) continue;
       const existing = byUrl.get(item.source.url);
-      if (!existing || Date.parse(item.retrievedAt) > Date.parse(existing.retrievedAt)) {
-        byUrl.set(item.source.url, item);
-      }
+      if (!existing || Date.parse(item.retrievedAt) > Date.parse(existing.retrievedAt)) byUrl.set(item.source.url, item);
     }
   }
 
