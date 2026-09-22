@@ -6,12 +6,18 @@ export interface MatchedBaselineOptions {
   minSamples?: number;
 }
 function sameSeries(a: Observation, b: Observation) {
+  const aSeries = a.properties.seriesKey;
+  const bSeries = b.properties.seriesKey;
+  const explicitSeries =
+    typeof aSeries === "string" || typeof bSeries === "string"
+      ? aSeries === bSeries
+      : a.properties.countryCode === b.properties.countryCode;
   return (
     a.provider === b.provider &&
     a.type === b.type &&
     a.cellId === b.cellId &&
     a.properties.metric === b.properties.metric &&
-    a.properties.countryCode === b.properties.countryCode &&
+    explicitSeries &&
     a.properties.stepSeconds === b.properties.stepSeconds &&
     a.properties.snapshotSeconds === b.properties.snapshotSeconds
   );
