@@ -51,7 +51,13 @@ async function main() {
       }
       if (Date.now() - lastContextRefresh >= 15 * 60000) {
         const contextResult = await refreshRecentInvestigations();
-        log("context.refresh.completed", contextResult);
+        log("context.refresh.completed", {
+          status: contextResult.status,
+          attempted: contextResult.attempted,
+          refreshed: contextResult.refreshed,
+          failed: contextResult.failed,
+          prunedHistory: contextResult.prunedHistory,
+        });
         lastContextRefresh = Date.now();
       }
       if (Date.now() - lastMaintenance >= 3600000) {
