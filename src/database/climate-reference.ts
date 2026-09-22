@@ -9,6 +9,11 @@ export interface StoredTemperatureReference extends TemperatureReference {
   referenceEnd: string;
 }
 
+function dateOnly(value: unknown) {
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
 export async function getTemperatureReference(
   cellId: string,
   kind: TemperatureExtremeKind,
@@ -30,8 +35,8 @@ export async function getTemperatureReference(
     p10C: Number(row.p10_c),
     p90C: Number(row.p90_c),
     sampleCount: Number(row.sample_count),
-    referenceStart: row.reference_start.toISOString().slice(0, 10),
-    referenceEnd: row.reference_end.toISOString().slice(0, 10),
+    referenceStart: dateOnly(row.reference_start),
+    referenceEnd: dateOnly(row.reference_end),
   };
 }
 
