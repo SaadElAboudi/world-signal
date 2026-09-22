@@ -72,12 +72,22 @@ export async function getCorrelatedEventInvestigation(
     now?: Date;
   } = {},
 ) {
+  // As with signal investigations, explicit providers indicate deterministic
+  // test/preview execution and remain intentionally ephemeral.
+  if (options.providers) {
+    return buildInvestigation(event, {
+      providers: options.providers,
+      signals,
+      now: options.now,
+    });
+  }
+
   if (!options.forceRefresh) {
     const cached = await getPersistedInvestigation("correlated_event", event.id);
     if (cached) return cached;
   }
   const investigation = await buildInvestigation(event, {
-    providers: options.providers ?? DEFAULT_CONTEXT_PROVIDERS(),
+    providers: DEFAULT_CONTEXT_PROVIDERS(),
     signals,
     now: options.now,
   });
