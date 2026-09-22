@@ -55,15 +55,17 @@ async function main() {
       if (eventRefreshEnabled && Date.now() - lastEventRefresh >= 15 * 60000) {
         const events = await refreshAllWorldEvents({ days: 14, limit: 1000 });
         log("events.refresh.completed", {
-          providers: events.providers.map((provider) => ({
-            provider: provider.provider,
-            status: provider.status,
-            received: provider.received,
-            inserted: provider.inserted,
-            updated: provider.updated,
-            unchanged: provider.unchanged,
-            resolved: provider.resolved,
-          })),
+          providers: JSON.stringify(
+            events.providers.map((provider) => ({
+              provider: provider.provider,
+              status: provider.status,
+              received: provider.received,
+              inserted: provider.inserted,
+              updated: provider.updated,
+              unchanged: provider.unchanged,
+              resolved: provider.resolved,
+            })),
+          ),
         });
         lastEventRefresh = Date.now();
       }
