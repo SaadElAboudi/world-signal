@@ -19,3 +19,15 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+ADSB.lol aviation data
+
+WORLD SIGNAL uses aggregated live aircraft observations from ADSB.lol for its
+aviation sentinel layer. ADSB.lol publishes its public API/data under the Open
+Data Commons Open Database License (ODbL) v1.0. WORLD SIGNAL preserves source
+attribution and does not redistribute aircraft-level records or trajectories.
+
+Source: https://www.adsb.lol/
+License: https://opendatacommons.org/licenses/odbl/1-0/

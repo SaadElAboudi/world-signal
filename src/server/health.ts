@@ -15,6 +15,12 @@ export interface RunHealthRow {
   records_inserted: number;
   records_updated: number;
 }
+function providerName(id: string) {
+  if (id === "usgs") return "USGS";
+  if (id === "firms") return "NASA FIRMS · NOAA-20";
+  if (id === "adsblol") return "ADSB.lol";
+  return id;
+}
 export function classifyHealth(
   row: RunHealthRow | undefined,
   id: string,
@@ -23,7 +29,7 @@ export function classifyHealth(
   const config = getConfig();
   const base: ProviderHealth = {
     id,
-    name: id === "usgs" ? "USGS" : "NASA FIRMS · NOAA-20",
+    name: providerName(id),
     status: "unavailable",
     lastSuccessAt: row?.success_at?.toISOString() ?? null,
     lastAnalysisAt: row?.analysed_at?.toISOString() ?? null,
@@ -38,9 +44,13 @@ export function classifyHealth(
   if (id === "firms" && config.firmsTransport === "api" && !config.firmsKey)
     return { ...base, error: "missing_credentials" };
   if (!row?.success_at || !row.source_as_of) return base;
-  const budget =
-    (id === "usgs" ? config.usgsStaleMinutes : config.firmsStaleMinutes) *
-    60000;
+  const staleMinutes =
+    id === "usgs"
+      ? config.usgsStaleMinutes
+      : id === "adsblol"
+        ? config.adsbLolStaleMinutes
+        : config.firmsStaleMinutes;
+  const budget = staleMinutes * 60000;
   const age =
     now.getTime() -
     Math.min(row.success_at.getTime(), row.source_as_of.getTime());
@@ -65,7 +75,9 @@ export async function getProviderHealth(
     success.finished_at AS success_at, success.analysed_at, success.analysis_error, success.source_as_of, success.latest_observation_at, latest.records_received,latest.records_inserted,latest.records_updated
     FROM (SELECT DISTINCT ON(provider) * FROM provider_runs ORDER BY provider,started_at DESC) latest
     LEFT JOIN LATERAL (SELECT * FROM provider_runs r WHERE r.provider=latest.provider AND r.status='success' ORDER BY finished_at DESC LIMIT 1) success ON true`);
-  return ["usgs", "firms"].map((id) =>
+  const ids = ["usgs", "firms"];
+  if (result.rows.some((row) => row.provider === "adsblol")) ids.push("adsblol");
+  return ids.map((id) =>
     classifyHealth(
       result.rows.find((r) => r.provider === id),
       id,

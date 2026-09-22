@@ -46,6 +46,16 @@ export const EVENT_SOURCE_REGISTRY: readonly EventSourceMetadata[] = [
     sourceUrl: "https://ioda.inetintel.cc.gatech.edu/",
   },
   {
+    id: "adsblol",
+    name: "ADSB.lol",
+    categories: ["mobility"],
+    types: ["aviation_disruption"],
+    cadenceMinutes: 15,
+    retention: "aggregate_only",
+    operational: true,
+    sourceUrl: "https://www.adsb.lol/",
+  },
+  {
     id: "opensky",
     name: "OpenSky Network",
     categories: ["mobility"],

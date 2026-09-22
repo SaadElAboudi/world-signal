@@ -28,7 +28,11 @@ export interface WorldSignal {
   confidence: number;
   baseline: EvidencePoint[];
   context: string;
-  kind?: "earthquake-event" | "earthquake-cluster" | "fire-cluster";
+  kind?:
+    | "earthquake-event"
+    | "earthquake-cluster"
+    | "fire-cluster"
+    | "aviation-disruption";
   startedAt?: string;
   updatedAt?: string;
   sourceAsOf?: string;
