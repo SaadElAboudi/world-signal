@@ -3,7 +3,11 @@ import test, { after, before } from "node:test";
 import assert from "node:assert/strict";
 import { migrate } from "../scripts/migrate";
 import { closePool, getPool } from "../src/database/client";
-import { getWorldEvent, upsertWorldEvents } from "../src/database/world-events";
+import {
+  getWorldEvent,
+  resolveMissingProviderEvents,
+  upsertWorldEvents,
+} from "../src/database/world-events";
 import type { WorldEvent } from "../src/events/types";
 
 const liveUrl = process.env.DATABASE_URL;
@@ -55,15 +59,23 @@ after(async () => {
 });
 
 test("unchanged refreshes do not create event history", async () => {
-  const first = await upsertWorldEvents([event], new Date("2026-09-22T10:01:00Z"));
+  const first = await upsertWorldEvents(
+    [event],
+    new Date("2026-09-22T10:01:00Z"),
+  );
   assert.deepEqual(first, { inserted: 1, updated: 0, unchanged: 0 });
   const refreshed: WorldEvent = {
     ...event,
     properties: { collectedAt: "2026-09-22T10:16:00.000Z" },
   };
-  const second = await upsertWorldEvents([refreshed], new Date("2026-09-22T10:16:00Z"));
+  const second = await upsertWorldEvents(
+    [refreshed],
+    new Date("2026-09-22T10:16:00Z"),
+  );
   assert.deepEqual(second, { inserted: 0, updated: 0, unchanged: 1 });
-  const count = await getPool().query("SELECT count(*) FROM world_event_history");
+  const count = await getPool().query(
+    "SELECT count(*) FROM world_event_history",
+  );
   assert.equal(Number(count.rows[0].count), 0);
 });
 
@@ -75,12 +87,60 @@ test("semantic event changes archive exactly one previous version", async () => 
     updatedAt: "2026-09-22T11:00:00.000Z",
     endedAt: "2026-09-22T11:00:00.000Z",
   };
-  const result = await upsertWorldEvents([resolved], new Date("2026-09-22T11:01:00Z"));
+  const result = await upsertWorldEvents(
+    [resolved],
+    new Date("2026-09-22T11:01:00Z"),
+  );
   assert.deepEqual(result, { inserted: 0, updated: 1, unchanged: 0 });
   const stored = await getWorldEvent(event.id);
   assert.equal(stored?.status, "resolved");
   assert.equal(stored?.severity, "elevated");
-  const history = await getPool().query("SELECT payload FROM world_event_history WHERE event_id=$1", [event.id]);
+  const history = await getPool().query(
+    "SELECT payload FROM world_event_history WHERE event_id=$1",
+    [event.id],
+  );
   assert.equal(history.rowCount, 1);
   assert.equal(history.rows[0].payload.status, "active");
+});
+
+test("provider events absent from the next authoritative refresh resolve once", async () => {
+  const weather: WorldEvent = {
+    ...event,
+    id: "open-meteo:cell:heat:2026-09-22",
+    category: "climate",
+    type: "temperature_extreme",
+    title: "Extreme heat forecast",
+    severity: "significant",
+    confidence: 0.6,
+    source: {
+      provider: "open-meteo",
+      name: "Open-Meteo",
+      url: "https://open-meteo.com/",
+      upstreamId: "cell:heat:2026-09-22",
+    },
+    properties: { forecast: true },
+  };
+  await upsertWorldEvents([weather], new Date("2026-09-22T12:00:00Z"));
+  const resolved = await resolveMissingProviderEvents(
+    "open-meteo",
+    [],
+    new Date("2026-09-22T12:15:00Z"),
+  );
+  assert.equal(resolved, 1);
+  const stored = await getWorldEvent(weather.id);
+  assert.equal(stored?.status, "resolved");
+  assert.equal(stored?.endedAt, "2026-09-22T12:15:00.000Z");
+  assert.equal(stored?.properties.resolvedBecauseMissingFromProvider, true);
+
+  const second = await resolveMissingProviderEvents(
+    "open-meteo",
+    [],
+    new Date("2026-09-22T12:30:00Z"),
+  );
+  assert.equal(second, 0);
+  const history = await getPool().query(
+    "SELECT count(*) FROM world_event_history WHERE event_id=$1",
+    [weather.id],
+  );
+  assert.equal(Number(history.rows[0].count), 1);
 });
