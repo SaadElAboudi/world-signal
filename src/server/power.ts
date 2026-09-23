@@ -41,7 +41,8 @@ async function storeLoads(observations: PowerLoadObservation[], now: Date, reten
        VALUES('entsoe',$1,date_trunc('hour',$2::timestamptz),$3,$2)
        ON CONFLICT(provider,region_id,bucket_hour) DO UPDATE SET
          load_mw=EXCLUDED.load_mw,
-         source_updated_at=GREATEST(power_load_hourly.source_updated_at,EXCLUDED.source_updated_at)`,
+         source_updated_at=EXCLUDED.source_updated_at
+       WHERE EXCLUDED.source_updated_at >= power_load_hourly.source_updated_at`,
       [observation.region.id, observation.timestamp, observation.loadMw],
     );
   }
