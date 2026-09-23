@@ -1,7 +1,5 @@
-name: Refresh power grid sentinels
+name: Refresh power grid sentinels (manual)
 on:
-  schedule:
-    - cron: "41 * * * *"
   workflow_dispatch:
 permissions:
   contents: read
@@ -12,7 +10,7 @@ jobs:
   power:
     if: vars.WORLD_SIGNAL_INGEST_ENABLED == 'true' && vars.ENTSOE_ENABLED == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 4
     env:
       DATABASE_URL: ${{ secrets.WORLD_SIGNAL_DATABASE_URL }}
       DATABASE_SSL_CA: ${{ secrets.WORLD_SIGNAL_DATABASE_CA }}
