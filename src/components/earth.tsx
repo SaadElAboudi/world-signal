@@ -9,7 +9,7 @@ import {
 } from "react";
 import Globe, { type GlobeMethods } from "react-globe.gl";
 import { SEVERITY_COLOR, type WorldSignal } from "@/core/types";
-import type { WorldEvent } from "@/events/types";
+import type { EventSeverity, WorldEvent } from "@/events/types";
 import { Icon } from "./icon";
 const motionQuery = "(prefers-reduced-motion: reduce)";
 function subscribeMotion(callback: () => void) {
@@ -18,6 +18,10 @@ function subscribeMotion(callback: () => void) {
   return () => media.removeEventListener("change", callback);
 }
 const getMotionPreference = () => window.matchMedia(motionQuery).matches;
+function severityColor(severity: EventSeverity) {
+  if (severity === "info") return "#78929c";
+  return SEVERITY_COLOR[severity];
+}
 interface Country {
   properties: { ADMIN: string };
   geometry: { type: string; coordinates: number[][][] };
@@ -27,7 +31,7 @@ type GlobePoint = {
   id: string;
   latitude: number;
   longitude: number;
-  severity: "info" | "notable" | "elevated" | "significant";
+  severity: EventSeverity;
   label: string;
   sourceUrl?: string;
   signal?: WorldSignal;
@@ -215,7 +219,7 @@ export default function Earth({
           if (point.kind === "signal" && point.id === selected?.id) return 0.7;
           return point.kind === "event" ? 0.32 : 0.45;
         }}
-        pointColor={(d) => SEVERITY_COLOR[(d as GlobePoint).severity]}
+        pointColor={(d) => severityColor((d as GlobePoint).severity)}
         pointLabel={(d) => {
           const point = d as GlobePoint;
           return `${point.kind === "event" ? "WORLD EVENT" : "SIGNAL"} · ${point.label}`;
@@ -238,7 +242,7 @@ export default function Earth({
         ringLat="latitude"
         ringLng="longitude"
         ringAltitude={0.018}
-        ringColor={(d: object) => SEVERITY_COLOR[(d as GlobePoint).severity]}
+        ringColor={(d: object) => severityColor((d as GlobePoint).severity)}
         ringMaxRadius={3.2}
         ringPropagationSpeed={0.7}
         ringRepeatPeriod={2400}
