@@ -22,6 +22,7 @@
     "events:refresh": "tsx scripts/events.ts",
     "events:internet": "tsx scripts/internet-events.ts",
     "events:marine": "tsx scripts/marine-events.ts",
+    "events:power": "tsx scripts/power-events.ts",
     "aviation:refresh": "tsx scripts/aviation.ts",
     "worker": "tsx scripts/worker.ts",
     "db:seed": "tsx scripts/seed.ts",
