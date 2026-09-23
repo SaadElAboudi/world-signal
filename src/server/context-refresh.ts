@@ -11,6 +11,11 @@ export interface ContextRefreshResult {
   prunedHistory: number;
 }
 
+function contextHistoryDays() {
+  const value = Number(process.env.CONTEXT_HISTORY_DAYS ?? 14);
+  return Number.isFinite(value) ? Math.max(3, Math.min(60, Math.floor(value))) : 14;
+}
+
 export async function refreshRecentInvestigations(
   options: { limit?: number; lookbackHours?: number } = {},
 ): Promise<ContextRefreshResult> {
@@ -51,7 +56,7 @@ export async function refreshRecentInvestigations(
         log("context.refresh.signal.failed", { signalId: row.id, code: errorCode(error) });
       }
     }
-    const prunedHistory = await pruneInvestigationHistory(30);
+    const prunedHistory = await pruneInvestigationHistory(contextHistoryDays());
     return {
       status: "success",
       attempted: candidates.rowCount ?? 0,
