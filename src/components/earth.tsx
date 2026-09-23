@@ -10,6 +10,7 @@ import {
 import Globe, { type GlobeMethods } from "react-globe.gl";
 import { SEVERITY_COLOR, type WorldSignal } from "@/core/types";
 import type { WorldEvent } from "@/events/types";
+import eventStyles from "./earth-events.module.css";
 import { Icon } from "./icon";
 
 const motionQuery = "(prefers-reduced-motion: reduce)";
@@ -140,7 +141,11 @@ export default function Earth({
         });
         if (!response.ok) return;
         const data = await response.json();
-        const next = Array.isArray(data.events) ? data.events : Array.isArray(data) ? data : [];
+        const next = Array.isArray(data.events)
+          ? data.events
+          : Array.isArray(data)
+            ? data
+            : [];
         if (!disposed) setEvents(next);
       } catch {
         // Universal events are additive; existing signals remain usable when this layer is unavailable.
@@ -235,10 +240,13 @@ export default function Earth({
         pointsData={points}
         pointLat="latitude"
         pointLng="longitude"
-        pointAltitude={(datum) => ((datum as GlobePoint).kind === "event" ? 0.014 : 0.008)}
+        pointAltitude={(datum) =>
+          (datum as GlobePoint).kind === "event" ? 0.014 : 0.008
+        }
         pointRadius={(datum) => {
           const point = datum as GlobePoint;
-          if (point.kind === "event") return selectedEvent?.id === point.id ? 0.65 : 0.32;
+          if (point.kind === "event")
+            return selectedEvent?.id === point.id ? 0.65 : 0.32;
           return point.id === selected?.id ? 0.7 : 0.45;
         }}
         pointColor={(datum) => SEVERITY_COLOR[(datum as GlobePoint).severity]}
@@ -254,7 +262,9 @@ export default function Earth({
         ringLat="latitude"
         ringLng="longitude"
         ringAltitude={0.018}
-        ringColor={(datum: object) => SEVERITY_COLOR[(datum as WorldSignal).severity]}
+        ringColor={(datum: object) =>
+          SEVERITY_COLOR[(datum as WorldSignal).severity]
+        }
         ringMaxRadius={3.2}
         ringPropagationSpeed={0.7}
         ringRepeatPeriod={2400}
@@ -268,8 +278,7 @@ export default function Earth({
             : (datum as WorldSignal).country.toUpperCase()
         }
         labelSize={0.9}
-        labelColor={() => "#b7c8cb"
-        }
+        labelColor={() => "#b7c8cb"}
         labelDotRadius={0}
         labelDotOrientation={() => "bottom"}
         labelResolution={2}
@@ -288,7 +297,7 @@ export default function Earth({
         </p>
       )}
       {selectedEvent && (
-        <article className="event-map-card" data-severity={selectedEvent.severity}>
+        <article className={eventStyles.card} data-severity={selectedEvent.severity}>
           <button
             type="button"
             aria-label="Close world event"
