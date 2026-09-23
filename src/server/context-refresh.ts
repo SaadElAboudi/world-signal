@@ -1,5 +1,8 @@
 import { getPool } from "../database/client";
+import { getStorageBudgetState } from "../database/resource-governor";
+import { storageProfileForPressure } from "../database/storage-profile";
 import { pruneInvestigationHistory } from "../database/investigations";
+import { getConfig } from "./config";
 import { log, errorCode } from "./log";
 import { refreshSignalInvestigation } from "./context";
 
@@ -51,7 +54,14 @@ export async function refreshRecentInvestigations(
         log("context.refresh.signal.failed", { signalId: row.id, code: errorCode(error) });
       }
     }
-    const prunedHistory = await pruneInvestigationHistory(30);
+
+    const storage = await getStorageBudgetState();
+    const config = getConfig();
+    const profile = storageProfileForPressure(storage.pressure, {
+      firmsRawRetentionHours: config.firmsRawRetentionHours,
+      firmsRawSamplesPerCellHour: config.firmsRawSamplesPerHour,
+    });
+    const prunedHistory = await pruneInvestigationHistory(profile.eventHistoryDays);
     return {
       status: "success",
       attempted: candidates.rowCount ?? 0,
