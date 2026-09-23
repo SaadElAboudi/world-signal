@@ -84,6 +84,7 @@ export function parseEntsoeUnavailability(
       cleanText(tag(block, "production_RegisteredResource.name")) ??
       cleanText(tag(block, "name"));
     const reason = cleanText(tag(block, "text"));
+    const active = Date.parse(end) > now.getTime();
     const id = `entsoe:${zone.id}:${upstreamId}`;
     events.push({
       schemaVersion: 1,
@@ -98,12 +99,12 @@ export function parseEntsoeUnavailability(
       ]
         .filter(Boolean)
         .join(" "),
-      status: Date.parse(end) > now.getTime() ? "active" : "resolved",
+      status: active ? "active" : "resolved",
       severity: "notable",
       confidence: 0.75,
       startedAt: start,
-      updatedAt: now.toISOString(),
-      endedAt: Date.parse(end) <= now.getTime() ? end : null,
+      updatedAt: active ? start : end,
+      endedAt: active ? null : end,
       location: {
         latitude: zone.latitude,
         longitude: zone.longitude,
@@ -170,7 +171,7 @@ export class EntsoePowerProvider {
     }
     const limit = Math.max(1, Math.min(500, options.limit ?? 500));
     return events
-      .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+      .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
       .slice(0, limit);
   }
 }
