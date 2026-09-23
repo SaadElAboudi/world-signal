@@ -5,6 +5,7 @@ import { OpenMeteoMarineProvider } from "../events/providers/open-meteo-marine";
 import { IodaInternetOutageProvider } from "../events/providers/ioda";
 import { getPool } from "../database/client";
 import { enrichWeatherWithClimatology } from "./climate";
+import { reserveApiCalls } from "./budgets";
 import {
   getWorldEvent,
   listWorldEvents,
@@ -21,14 +22,26 @@ const CATEGORIES = new Set<EventCategory>([
   "earth_observation",
 ]);
 
+const INTERNAL_API_BUDGETS = {
+  eonet: 500,
+  openMeteo: 4_000,
+  ioda: 500,
+} as const;
+
 type RefreshOptions = { now?: Date; days?: number; limit?: number };
 type EventTransform = (events: WorldEvent[]) => Promise<WorldEvent[]>;
+type RequestBudget = {
+  ledgerProvider: string;
+  units: number;
+  dailyBudget: number;
+};
 
 async function refreshProvider(
   provider: EventProvider,
   options: RefreshOptions = {},
   resolveMissing = false,
   transform?: EventTransform,
+  requestBudget?: RequestBudget,
 ) {
   const client = await getPool().connect();
   const lockName = `world-signal:events:${provider.id}`;
@@ -48,6 +61,24 @@ async function refreshProvider(
         resolved: 0,
       };
     try {
+      if (requestBudget) {
+        const reservation = await reserveApiCalls(
+          requestBudget.ledgerProvider,
+          requestBudget.units,
+          requestBudget.dailyBudget,
+          options.now,
+        );
+        if (!reservation.allowed)
+          return {
+            provider: provider.id,
+            status: "budget_exhausted" as const,
+            received: 0,
+            inserted: 0,
+            updated: 0,
+            unchanged: 0,
+            resolved: 0,
+          };
+      }
       const fetched = await provider.fetchEvents(options);
       const events = transform ? await transform(fetched) : fetched;
       const result = await upsertWorldEvents(events, options.now);
@@ -74,7 +105,13 @@ async function refreshProvider(
 }
 
 export async function refreshEonetWorldEvents(options: RefreshOptions = {}) {
-  return refreshProvider(new EonetEventProvider(), options);
+  return refreshProvider(
+    new EonetEventProvider(),
+    options,
+    false,
+    undefined,
+    { ledgerProvider: "eonet", units: 1, dailyBudget: INTERNAL_API_BUDGETS.eonet },
+  );
 }
 
 export async function refreshWeatherWorldEvents(options: RefreshOptions = {}) {
@@ -100,6 +137,11 @@ export async function refreshWeatherWorldEvents(options: RefreshOptions = {}) {
         endpoint: archiveEndpoint,
         apiKey,
       }),
+    {
+      ledgerProvider: "open-meteo",
+      units: 9,
+      dailyBudget: INTERNAL_API_BUDGETS.openMeteo,
+    },
   );
 }
 
@@ -120,6 +162,12 @@ export async function refreshMarineWorldEvents(options: RefreshOptions = {}) {
     new OpenMeteoMarineProvider({ endpoint, apiKey }),
     options,
     true,
+    undefined,
+    {
+      ledgerProvider: "open-meteo",
+      units: 2,
+      dailyBudget: INTERNAL_API_BUDGETS.openMeteo,
+    },
   );
 }
 
@@ -138,6 +186,9 @@ export async function refreshInternetWorldEvents(options: RefreshOptions = {}) {
   return refreshProvider(
     new IodaInternetOutageProvider({ endpoint }),
     { ...options, days: options.days ?? 90, limit: options.limit ?? 1000 },
+    false,
+    undefined,
+    { ledgerProvider: "ioda", units: 1, dailyBudget: INTERNAL_API_BUDGETS.ioda },
   );
 }
 
