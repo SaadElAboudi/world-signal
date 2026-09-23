@@ -20,18 +20,20 @@ function timeAgo(timestamp: string, now: Date) {
 
 export function WorldStatus({ events, now = new Date() }: { events: WorldEvent[]; now?: Date }) {
   const active = events.filter((event) => event.status === "active");
+  const significant = active.filter((event) => event.severity === "significant").length;
   const categories = ["natural_hazard", "climate", "environment", "infrastructure", "mobility"] as const;
   const latest = [...active]
     .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
-    .slice(0, 3);
+    .slice(0, 4);
 
   return (
-    <section className={styles.status} aria-label="World event status">
+    <section className={styles.status} aria-label="World event status and feed">
       <div className={styles.summary}>
         <span className={styles.pulse} aria-hidden="true" />
         <strong>WORLD STATUS</strong>
         <b>{active.length}</b>
-        <span>active events</span>
+        <span>active</span>
+        {significant > 0 && <em>{significant} significant</em>}
       </div>
       <div className={styles.counts}>
         {categories.map((category) => {
@@ -40,15 +42,18 @@ export function WorldStatus({ events, now = new Date() }: { events: WorldEvent[]
           return <span key={category}><b>{count}</b> {label[category]}</span>;
         })}
       </div>
-      <div className={styles.latest}>
-        {latest.length ? latest.map((event) => (
-          <a key={event.id} href={event.source.url} target="_blank" rel="noreferrer" title={event.title}>
-            <span data-severity={event.severity} />
-            <strong>{event.type.replaceAll("_", " ")}</strong>
-            <em>{event.title}</em>
-            <time dateTime={event.updatedAt}>{timeAgo(event.updatedAt, now)}</time>
-          </a>
-        )) : <span className={styles.empty}>Broad event feed initializing…</span>}
+      <div className={styles.feed} aria-label="Latest world events">
+        <span className={styles.feedLabel}>WORLD FEED</span>
+        <div className={styles.latest}>
+          {latest.length ? latest.map((event) => (
+            <a key={event.id} href={event.source.url} target="_blank" rel="noreferrer" title={`${event.title} · ${event.source.name}`}>
+              <span data-severity={event.severity} />
+              <strong>{label[event.category] ?? event.category}</strong>
+              <em>{event.title}</em>
+              <time dateTime={event.updatedAt}>{timeAgo(event.updatedAt, now)}</time>
+            </a>
+          )) : <span className={styles.empty}>Event coverage initializing…</span>}
+        </div>
       </div>
     </section>
   );
