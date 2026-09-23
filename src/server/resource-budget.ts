@@ -9,7 +9,8 @@ export type BudgetedProvider =
   | "open-meteo"
   | "ioda"
   | "adsblol"
-  | "entsoe";
+  | "entsoe"
+  | "context";
 
 const DEFAULT_LIMITS: Record<BudgetedProvider, { daily: number; monthly: number }> = {
   // Internal safety caps, deliberately below known/free usage envelopes when published.
@@ -18,6 +19,8 @@ const DEFAULT_LIMITS: Record<BudgetedProvider, { daily: number; monthly: number 
   ioda: { daily: 500, monthly: 14_000 },
   adsblol: { daily: 2_500, monthly: 70_000 },
   entsoe: { daily: 200, monthly: 5_000 },
+  // GDELT + GDACS are counted together so investigations cannot create an unbounded fan-out.
+  context: { daily: 2_500, monthly: 60_000 },
 };
 
 function envLimit(provider: BudgetedProvider, period: "DAILY" | "MONTHLY", fallback: number) {
