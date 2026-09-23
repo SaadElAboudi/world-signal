@@ -71,7 +71,7 @@ export function parseEntsoeActualLoad(xml: string): { timestamp: string; loadMw:
 }
 
 function utcStamp(date: Date) {
-  return date.toISOString().replace(/[-:]/g, "").slice(0, 12);
+  return date.toISOString().slice(0, 16).replace(/[-:T]/g, "");
 }
 
 export class EntsoeActualLoadProvider {
