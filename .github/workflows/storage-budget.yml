@@ -1,0 +1,42 @@
+name: Compact storage budget
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: world-signal-production-storage
+  cancel-in-progress: false
+jobs:
+  compact:
+    if: vars.WORLD_SIGNAL_INGEST_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      DATABASE_URL: ${{ secrets.WORLD_SIGNAL_DATABASE_URL }}
+      DATABASE_SSL_CA: ${{ secrets.WORLD_SIGNAL_DATABASE_CA }}
+      DATABASE_POOL_MAX: "2"
+      DATABASE_STORAGE_LIMIT_MB: "1024"
+      WORLD_EVENT_HISTORY_DAYS: "14"
+      WORLD_EVENT_RESOLVED_DAYS: "21"
+      CONTEXT_HISTORY_DAYS: "14"
+      OBSERVATION_RETENTION_DAYS: "21"
+      SIGNAL_RETENTION_DAYS: "21"
+      SIGNAL_EVIDENCE_RETENTION_DAYS: "21"
+      PROVIDER_RUN_RETENTION_DAYS: "21"
+      FIRMS_RAW_RETENTION_HOURS: "24"
+      FIRMS_RAW_SAMPLES_PER_CELL_HOUR: "3"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Apply database migrations
+        run: npm run db:migrate
+      - name: Compact bounded histories
+        run: npm run db:compact
+      - name: Report database budget
+        run: npm run db:budget
