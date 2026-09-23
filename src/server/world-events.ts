@@ -3,6 +3,7 @@ import { EonetEventProvider } from "../events/providers/eonet";
 import { OpenMeteoExtremeWeatherProvider } from "../events/providers/open-meteo";
 import { OpenMeteoMarineProvider } from "../events/providers/open-meteo-marine";
 import { IodaInternetOutageProvider } from "../events/providers/ioda";
+import { EntsoePowerProvider, ENTSOE_SENTINELS } from "../events/providers/entsoe";
 import { getPool } from "../database/client";
 import { enrichWeatherWithClimatology } from "./climate";
 import { reserveApiCalls } from "./budgets";
@@ -26,6 +27,7 @@ const INTERNAL_API_BUDGETS = {
   eonet: 500,
   openMeteo: 4_000,
   ioda: 500,
+  entsoe: 200,
 } as const;
 
 type RefreshOptions = { now?: Date; days?: number; limit?: number };
@@ -189,6 +191,32 @@ export async function refreshInternetWorldEvents(options: RefreshOptions = {}) {
     false,
     undefined,
     { ledgerProvider: "ioda", units: 1, dailyBudget: INTERNAL_API_BUDGETS.ioda },
+  );
+}
+
+export async function refreshPowerWorldEvents(options: RefreshOptions = {}) {
+  const token = process.env.ENTSOE_API_TOKEN;
+  if (process.env.ENTSOE_ENABLED !== "true" || !token)
+    return {
+      provider: "entsoe",
+      status: "disabled" as const,
+      received: 0,
+      inserted: 0,
+      updated: 0,
+      unchanged: 0,
+      resolved: 0,
+    };
+  const endpoint = process.env.ENTSOE_ENDPOINT || undefined;
+  return refreshProvider(
+    new EntsoePowerProvider({ token, endpoint }),
+    options,
+    true,
+    undefined,
+    {
+      ledgerProvider: "entsoe",
+      units: ENTSOE_SENTINELS.length,
+      dailyBudget: INTERNAL_API_BUDGETS.entsoe,
+    },
   );
 }
 
