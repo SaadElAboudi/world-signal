@@ -9,7 +9,9 @@ import {
 } from "react";
 import Globe, { type GlobeMethods } from "react-globe.gl";
 import { SEVERITY_COLOR, type WorldSignal } from "@/core/types";
+import type { WorldEvent } from "@/events/types";
 import { Icon } from "./icon";
+
 const motionQuery = "(prefers-reduced-motion: reduce)";
 function subscribeMotion(callback: () => void) {
   const media = window.matchMedia(motionQuery);
@@ -17,10 +19,20 @@ function subscribeMotion(callback: () => void) {
   return () => media.removeEventListener("change", callback);
 }
 const getMotionPreference = () => window.matchMedia(motionQuery).matches;
+
 interface Country {
   properties: { ADMIN: string };
   geometry: { type: string; coordinates: number[][][] };
 }
+
+type MapPoint =
+  | { kind: "signal"; id: string; latitude: number; longitude: number; severity: WorldSignal["severity"]; signal: WorldSignal }
+  | { kind: "event"; id: string; latitude: number; longitude: number; severity: WorldEvent["severity"]; event: WorldEvent };
+
+function markerColor(severity: MapPoint["severity"]) {
+  return severity === "info" ? "#6f8792" : SEVERITY_COLOR[severity];
+}
+
 export default function Earth({
   signals,
   selected,
@@ -34,6 +46,52 @@ export default function Earth({
   onSelect: (s: WorldSignal) => void;
   onCountry: (name: string) => void;
 }) {
+  const [events, setEvents] = useState<WorldEvent[]>([]);
+  useEffect(() => {
+    const abort = new AbortController();
+    const refresh = async () => {
+      try {
+        const response = await fetch("/api/events?status=active&limit=300", {
+          signal: abort.signal,
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { events?: WorldEvent[] };
+        if (!abort.signal.aborted && Array.isArray(payload.events)) setEvents(payload.events);
+      } catch {
+        // World events are additive. Signal exploration must remain available.
+      }
+    };
+    void refresh();
+    const poll = setInterval(refresh, 60_000);
+    return () => {
+      abort.abort();
+      clearInterval(poll);
+    };
+  }, []);
+
+  const mapPoints = useMemo<MapPoint[]>(
+    () => [
+      ...signals.map((signal) => ({
+        kind: "signal" as const,
+        id: signal.id,
+        latitude: signal.latitude,
+        longitude: signal.longitude,
+        severity: signal.severity,
+        signal,
+      })),
+      ...events.map((event) => ({
+        kind: "event" as const,
+        id: event.id,
+        latitude: event.location.latitude,
+        longitude: event.location.longitude,
+        severity: event.severity,
+        event,
+      })),
+    ],
+    [signals, events],
+  );
+
   const labelSignals = useMemo(() => {
     if (signals.length <= 14) return signals;
     const countries = new Set<string>();
@@ -45,6 +103,26 @@ export default function Earth({
       })
       .slice(0, 12);
   }, [signals, selected]);
+
+  const eventRings = useMemo(
+    () =>
+      [...events]
+        .sort((a, b) => {
+          const rank = { significant: 3, elevated: 2, notable: 1, info: 0 } as const;
+          return rank[b.severity] - rank[a.severity] || Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
+        })
+        .slice(0, 20)
+        .map((event) => ({
+          kind: "event" as const,
+          id: event.id,
+          latitude: event.location.latitude,
+          longitude: event.location.longitude,
+          severity: event.severity,
+          event,
+        })),
+    [events],
+  );
+
   const container = useRef<HTMLDivElement>(null);
   const globe = useRef<GlobeMethods | undefined>(undefined);
   const [size, setSize] = useState({ width: 800, height: 700 });
@@ -57,6 +135,7 @@ export default function Earth({
     getMotionPreference,
     () => true,
   );
+
   useEffect(() => {
     const observer = new ResizeObserver(([entry]) =>
       setSize({
@@ -80,6 +159,7 @@ export default function Earth({
       abort.abort();
     };
   }, []);
+
   useEffect(() => {
     if (!ready || !selected) return;
     globe.current?.pointOfView(
@@ -87,11 +167,13 @@ export default function Earth({
       reducedMotion ? 0 : 1100,
     );
   }, [ready, selected, reducedMotion]);
+
   useEffect(() => {
     if (!ready || !globe.current) return;
     globe.current.controls().autoRotate = rotating && !reducedMotion;
     globe.current.controls().autoRotateSpeed = 0.3;
   }, [ready, rotating, reducedMotion]);
+
   useEffect(() => {
     const visibility = () => {
       if (document.hidden) globe.current?.pauseAnimation();
@@ -100,6 +182,7 @@ export default function Earth({
     document.addEventListener("visibilitychange", visibility);
     return () => document.removeEventListener("visibilitychange", visibility);
   }, []);
+
   const onReady = useCallback(() => {
     if (!globe.current) return;
     globe.current.pointOfView({ lat: 23, lng: 43, altitude: 2.05 });
@@ -111,6 +194,7 @@ export default function Earth({
     globe.current.controls().enablePan = false;
     setReady(true);
   }, []);
+
   const zoom = (factor: number) => {
     const g = globe.current;
     if (g)
@@ -124,6 +208,7 @@ export default function Earth({
         reducedMotion ? 0 : 400,
       );
   };
+
   return (
     <div className="earth-canvas" ref={container} data-testid="earth">
       <Globe
@@ -146,24 +231,40 @@ export default function Earth({
         polygonStrokeColor={() => "#345558"}
         polygonLabel={(d) => (d as Country).properties.ADMIN}
         onPolygonClick={(d) => onCountry((d as Country).properties.ADMIN)}
-        pointsData={signals}
+        pointsData={mapPoints}
         pointLat="latitude"
         pointLng="longitude"
-        pointAltitude={0.008}
-        pointRadius={(d) =>
-          (d as WorldSignal).id === selected?.id ? 0.7 : 0.45
-        }
-        pointColor={(d) => SEVERITY_COLOR[(d as WorldSignal).severity]}
-        pointLabel={(d) =>
-          `${(d as WorldSignal).country} · ${(d as WorldSignal).title} (${(d as WorldSignal).provenance === "synthetic" ? "demo" : "observed"})`
-        }
-        onPointClick={(d) => onSelect(d as WorldSignal)}
+        pointAltitude={(d) => ((d as MapPoint).kind === "event" ? 0.012 : 0.008)}
+        pointRadius={(d) => {
+          const point = d as MapPoint;
+          if (point.kind === "signal" && point.id === selected?.id) return 0.7;
+          return point.kind === "event" ? 0.52 : 0.45;
+        }}
+        pointColor={(d) => markerColor((d as MapPoint).severity)}
+        pointLabel={(d) => {
+          const point = d as MapPoint;
+          return point.kind === "signal"
+            ? `${point.signal.country} · ${point.signal.title} (${point.signal.provenance === "synthetic" ? "demo" : "observed"})`
+            : `${point.event.category.replaceAll("_", " ")} · ${point.event.title} · ${point.event.source.name}`;
+        }}
+        onPointClick={(d) => {
+          const point = d as MapPoint;
+          if (point.kind === "signal") onSelect(point.signal);
+          else window.open(point.event.source.url, "_blank", "noopener,noreferrer");
+        }}
         pointsTransitionDuration={reducedMotion ? 0 : 400}
-        ringsData={reducedMotion ? [] : labelSignals}
+        ringsData={reducedMotion ? [] : [...labelSignals.map((signal) => ({
+          kind: "signal" as const,
+          id: signal.id,
+          latitude: signal.latitude,
+          longitude: signal.longitude,
+          severity: signal.severity,
+          signal,
+        })), ...eventRings]}
         ringLat="latitude"
         ringLng="longitude"
         ringAltitude={0.018}
-        ringColor={(d: object) => SEVERITY_COLOR[(d as WorldSignal).severity]}
+        ringColor={(d: object) => markerColor((d as MapPoint).severity)}
         ringMaxRadius={3.2}
         ringPropagationSpeed={0.7}
         ringRepeatPeriod={2400}

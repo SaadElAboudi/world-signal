@@ -21,12 +21,15 @@ jobs:
       WORLD_SIGNAL_MODE: live
       WORLD_EVENT_REFRESH_ENABLED: "false"
       FIRMS_TRANSPORT: public
-      FIRMS_RAW_RETENTION_HOURS: "48"
-      FIRMS_RAW_SAMPLES_PER_CELL_HOUR: "5"
+      FIRMS_RAW_RETENTION_HOURS: "24"
+      FIRMS_RAW_SAMPLES_PER_CELL_HOUR: "3"
       USGS_STALE_MINUTES: "90"
       ANALYSIS_STALE_MINUTES: "90"
       COLLECTION_CADENCE_MINUTES: "60"
       FIRMS_INTERVAL_MINUTES: "30"
+      DB_SOFT_LIMIT_MB: "650"
+      DB_HARD_LIMIT_MB: "800"
+      CONTEXT_HISTORY_DAYS: "14"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -72,6 +72,33 @@ async function main() {
       return;
     }
     console.log("SCHEMA_READY");
+
+    const size = await pool.query(
+      "SELECT pg_database_size(current_database())::bigint AS bytes",
+    );
+    const bytes = Number(size.rows[0]?.bytes ?? 0);
+    console.log(
+      JSON.stringify({
+        databaseMegabytes: Number((bytes / 1024 / 1024).toFixed(1)),
+        freeTierReferenceMegabytes: 1024,
+        softBudgetMegabytes: Number(process.env.DB_SOFT_LIMIT_MB || 650),
+        hardBudgetMegabytes: Number(process.env.DB_HARD_LIMIT_MB || 800),
+      }),
+    );
+    const largest = await pool.query(
+      `SELECT relname AS table_name,pg_total_relation_size(relid)::bigint AS bytes
+       FROM pg_catalog.pg_statio_user_tables
+       ORDER BY pg_total_relation_size(relid) DESC
+       LIMIT 8`,
+    );
+    for (const row of largest.rows)
+      console.log(
+        JSON.stringify({
+          table: row.table_name,
+          megabytes: Number((Number(row.bytes) / 1024 / 1024).toFixed(1)),
+        }),
+      );
+
     const runs = await pool.query(
       "SELECT provider,max(finished_at) FILTER (WHERE status='success') AS last_collection,max(analysed_at) AS last_analysis FROM provider_runs GROUP BY provider ORDER BY provider",
     );

@@ -3,8 +3,10 @@ import { EonetEventProvider } from "../events/providers/eonet";
 import { OpenMeteoExtremeWeatherProvider } from "../events/providers/open-meteo";
 import { OpenMeteoMarineProvider } from "../events/providers/open-meteo-marine";
 import { IodaInternetOutageProvider } from "../events/providers/ioda";
+import { EntsoePowerProvider, ENTSOE_SENTINELS } from "../events/providers/entsoe";
 import { getPool } from "../database/client";
 import { enrichWeatherWithClimatology } from "./climate";
+import { reserveApiCalls } from "./budgets";
 import {
   getWorldEvent,
   listWorldEvents,
@@ -21,14 +23,40 @@ const CATEGORIES = new Set<EventCategory>([
   "earth_observation",
 ]);
 
+function dailyBudget(envName: string, fallback: number) {
+  const value = Number(process.env[envName]);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
+const INTERNAL_API_BUDGETS = {
+  get eonet() {
+    return dailyBudget("API_BUDGET_EONET_DAILY", 500);
+  },
+  get openMeteo() {
+    return dailyBudget("API_BUDGET_OPEN_METEO_DAILY", 4_000);
+  },
+  get ioda() {
+    return dailyBudget("API_BUDGET_IODA_DAILY", 500);
+  },
+  get entsoe() {
+    return dailyBudget("API_BUDGET_ENTSOE_DAILY", 200);
+  },
+};
+
 type RefreshOptions = { now?: Date; days?: number; limit?: number };
 type EventTransform = (events: WorldEvent[]) => Promise<WorldEvent[]>;
+type RequestBudget = {
+  ledgerProvider: string;
+  units: number;
+  dailyBudget: number;
+};
 
 async function refreshProvider(
   provider: EventProvider,
   options: RefreshOptions = {},
   resolveMissing = false,
   transform?: EventTransform,
+  requestBudget?: RequestBudget,
 ) {
   const client = await getPool().connect();
   const lockName = `world-signal:events:${provider.id}`;
@@ -48,6 +76,24 @@ async function refreshProvider(
         resolved: 0,
       };
     try {
+      if (requestBudget) {
+        const reservation = await reserveApiCalls(
+          requestBudget.ledgerProvider,
+          requestBudget.units,
+          requestBudget.dailyBudget,
+          options.now,
+        );
+        if (!reservation.allowed)
+          return {
+            provider: provider.id,
+            status: "budget_exhausted" as const,
+            received: 0,
+            inserted: 0,
+            updated: 0,
+            unchanged: 0,
+            resolved: 0,
+          };
+      }
       const fetched = await provider.fetchEvents(options);
       const events = transform ? await transform(fetched) : fetched;
       const result = await upsertWorldEvents(events, options.now);
@@ -74,7 +120,13 @@ async function refreshProvider(
 }
 
 export async function refreshEonetWorldEvents(options: RefreshOptions = {}) {
-  return refreshProvider(new EonetEventProvider(), options);
+  return refreshProvider(
+    new EonetEventProvider(),
+    options,
+    false,
+    undefined,
+    { ledgerProvider: "eonet", units: 1, dailyBudget: INTERNAL_API_BUDGETS.eonet },
+  );
 }
 
 export async function refreshWeatherWorldEvents(options: RefreshOptions = {}) {
@@ -100,6 +152,11 @@ export async function refreshWeatherWorldEvents(options: RefreshOptions = {}) {
         endpoint: archiveEndpoint,
         apiKey,
       }),
+    {
+      ledgerProvider: "open-meteo",
+      units: 9,
+      dailyBudget: INTERNAL_API_BUDGETS.openMeteo,
+    },
   );
 }
 
@@ -120,6 +177,12 @@ export async function refreshMarineWorldEvents(options: RefreshOptions = {}) {
     new OpenMeteoMarineProvider({ endpoint, apiKey }),
     options,
     true,
+    undefined,
+    {
+      ledgerProvider: "open-meteo",
+      units: 2,
+      dailyBudget: INTERNAL_API_BUDGETS.openMeteo,
+    },
   );
 }
 
@@ -138,6 +201,35 @@ export async function refreshInternetWorldEvents(options: RefreshOptions = {}) {
   return refreshProvider(
     new IodaInternetOutageProvider({ endpoint }),
     { ...options, days: options.days ?? 90, limit: options.limit ?? 1000 },
+    false,
+    undefined,
+    { ledgerProvider: "ioda", units: 1, dailyBudget: INTERNAL_API_BUDGETS.ioda },
+  );
+}
+
+export async function refreshPowerWorldEvents(options: RefreshOptions = {}) {
+  const token = process.env.ENTSOE_API_TOKEN;
+  if (process.env.ENTSOE_ENABLED !== "true" || !token)
+    return {
+      provider: "entsoe",
+      status: "disabled" as const,
+      received: 0,
+      inserted: 0,
+      updated: 0,
+      unchanged: 0,
+      resolved: 0,
+    };
+  const endpoint = process.env.ENTSOE_ENDPOINT || undefined;
+  return refreshProvider(
+    new EntsoePowerProvider({ token, endpoint }),
+    options,
+    true,
+    undefined,
+    {
+      ledgerProvider: "entsoe",
+      units: ENTSOE_SENTINELS.length,
+      dailyBudget: INTERNAL_API_BUDGETS.entsoe,
+    },
   );
 }
 

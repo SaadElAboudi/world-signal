@@ -6,6 +6,10 @@ import { AdsbLolProvider } from "../providers/adsblol";
 import { aviationDisruption } from "../signals/aviation";
 import { ingest } from "./ingestion";
 import { log } from "./log";
+import { reserveApiCalls } from "./budgets";
+
+const ADSB_LOL_REQUESTS_PER_REFRESH = 20;
+const ADSB_LOL_DAILY_BUDGET = 2_400;
 
 function rowToObservation(row: Record<string, unknown>): Observation {
   return {
@@ -103,6 +107,14 @@ export async function computeAviationSignals(now = new Date()) {
 export async function refreshAviation(now = new Date()) {
   if (process.env.ADSB_LOL_ENABLED === "false")
     return { status: "disabled" as const, regions: 0, signals: 0 };
+  const reservation = await reserveApiCalls(
+    "adsblol",
+    ADSB_LOL_REQUESTS_PER_REFRESH,
+    ADSB_LOL_DAILY_BUDGET,
+    now,
+  );
+  if (!reservation.allowed)
+    return { status: "budget_exhausted" as const, regions: 0, signals: 0 };
   const result = await ingest(new AdsbLolProvider(), false, now);
   if (result.status !== "success")
     return { status: result.status, regions: 0, signals: 0 };

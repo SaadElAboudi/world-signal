@@ -7,6 +7,8 @@ import { refreshAllWorldEvents } from "../src/server/world-events";
 import { getPool, closePool } from "../src/database/client";
 import { getConfig } from "../src/server/config";
 import { log, errorCode } from "../src/server/log";
+import type { StorageBudgetState } from "../src/server/budgets";
+
 const once = process.argv.includes("--once");
 const eventRefreshEnabled = process.env.WORLD_EVENT_REFRESH_ENABLED !== "false";
 let stopping = false;
@@ -16,15 +18,28 @@ process.on("SIGINT", () => {
 process.on("SIGTERM", () => {
   stopping = true;
 });
+
 async function main() {
   let lastComputed = 0;
   let lastContextRefresh = 0;
   let lastEventRefresh = 0;
   let lastMaintenance = 0;
+  let budgetState: StorageBudgetState = "normal";
   while (!stopping) {
     let failed = false;
     try {
       const config = getConfig();
+      if (lastMaintenance === 0 || Date.now() - lastMaintenance >= 3_600_000) {
+        const budget = await maintainCompactStorage();
+        budgetState = budget.state;
+        lastMaintenance = Date.now();
+        log("storage.budget.checked", {
+          state: budget.state,
+          megabytes: budget.megabytes,
+        });
+      }
+
+      const allowHistoricalExpansion = budgetState === "normal";
       for (const provider of providers) {
         const last = await getPool().query(
           "SELECT max(started_at) AS attempt,max(finished_at) FILTER(WHERE history AND status='success') AS history FROM provider_runs WHERE provider=$1",
@@ -39,10 +54,12 @@ async function main() {
           !last.rows[0].attempt ||
           Date.now() - last.rows[0].attempt.getTime() >= interval
         ) {
+          const needsHistory =
+            !last.rows[0].history ||
+            Date.now() - last.rows[0].history.getTime() > 86_400_000;
           const result = await ingest(
             provider,
-            !last.rows[0].history ||
-              Date.now() - last.rows[0].history.getTime() > 86400000,
+            allowHistoricalExpansion && needsHistory,
           );
           if (result.status === "failed" || result.status === "unavailable")
             failed = true;
@@ -69,7 +86,10 @@ async function main() {
         });
         lastEventRefresh = Date.now();
       }
-      if (Date.now() - lastContextRefresh >= 15 * 60000) {
+      if (
+        budgetState !== "hard_limit" &&
+        Date.now() - lastContextRefresh >= 15 * 60000
+      ) {
         const contextResult = await refreshRecentInvestigations();
         log("context.refresh.completed", {
           status: contextResult.status,
@@ -79,10 +99,6 @@ async function main() {
           prunedHistory: contextResult.prunedHistory,
         });
         lastContextRefresh = Date.now();
-      }
-      if (Date.now() - lastMaintenance >= 3600000) {
-        await maintainCompactStorage();
-        lastMaintenance = Date.now();
       }
     } catch (error) {
       log("worker.tick.failed", { code: errorCode(error) });
