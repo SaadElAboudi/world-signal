@@ -43,7 +43,7 @@ export function getConfig() {
       process.env.FIRMS_RAW_RETENTION_HOURS === undefined ||
       process.env.FIRMS_RAW_RETENTION_HOURS === "0"
         ? 0
-        : numberEnv("FIRMS_RAW_RETENTION_HOURS", 48, 48, 168),
+        : numberEnv("FIRMS_RAW_RETENTION_HOURS", 48, 24, 168),
     analysisStaleMinutes: numberEnv("ANALYSIS_STALE_MINUTES", 15, 5, 1440),
     collectionCadenceMinutes: numberEnv(
       "COLLECTION_CADENCE_MINUTES",
