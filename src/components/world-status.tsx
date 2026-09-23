@@ -22,11 +22,14 @@ export function WorldStatus({ events, now = new Date() }: { events: WorldEvent[]
   const active = events.filter((event) => event.status === "active");
   const categories = ["natural_hazard", "climate", "environment", "infrastructure", "mobility"] as const;
   const latest = [...active]
-    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
-    .slice(0, 3);
+    .sort((a, b) => {
+      const rank = { significant: 3, elevated: 2, notable: 1, info: 0 } as const;
+      return Date.parse(b.updatedAt) - Date.parse(a.updatedAt) || rank[b.severity] - rank[a.severity];
+    })
+    .slice(0, 6);
 
   return (
-    <section className={styles.status} aria-label="World event status">
+    <section className={styles.status} aria-label="World event status and feed">
       <div className={styles.summary}>
         <span className={styles.pulse} aria-hidden="true" />
         <strong>WORLD STATUS</strong>
@@ -40,11 +43,12 @@ export function WorldStatus({ events, now = new Date() }: { events: WorldEvent[]
           return <span key={category}><b>{count}</b> {label[category]}</span>;
         })}
       </div>
-      <div className={styles.latest}>
+      <div className={styles.latest} aria-label="World feed">
+        <span className={styles.feedLabel}>WORLD FEED</span>
         {latest.length ? latest.map((event) => (
-          <a key={event.id} href={event.source.url} target="_blank" rel="noreferrer" title={event.title}>
+          <a key={event.id} href={event.source.url} target="_blank" rel="noreferrer" title={`${event.title} · ${event.source.name}`}>
             <span data-severity={event.severity} />
-            <strong>{event.type.replaceAll("_", " ")}</strong>
+            <strong>{label[event.category] ?? event.category}</strong>
             <em>{event.title}</em>
             <time dateTime={event.updatedAt}>{timeAgo(event.updatedAt, now)}</time>
           </a>
