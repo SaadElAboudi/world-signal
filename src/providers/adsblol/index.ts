@@ -60,12 +60,16 @@ type RawSentinel = {
 };
 
 type RawData = { snapshots: RawSentinel[] };
-
 type FetchLike = typeof fetch;
 
 function bucketStart(date: Date) {
   const bucketMs = 15 * 60_000;
   return new Date(Math.floor(date.getTime() / bucketMs) * bucketMs);
+}
+
+function defaultRequestBudget() {
+  const value = Number(process.env.ADSB_LOL_MAX_REQUESTS_PER_RUN ?? 20);
+  return Number.isFinite(value) ? Math.max(1, Math.min(20, Math.floor(value))) : 20;
 }
 
 export class AdsbLolProvider implements ObservationProvider<RawData> {
@@ -80,10 +84,13 @@ export class AdsbLolProvider implements ObservationProvider<RawData> {
     fetchImpl?: FetchLike;
     endpoint?: string;
     sentinels?: readonly AviationSentinel[];
+    maxRequestsPerRun?: number;
   } = {}) {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.endpoint = options.endpoint ?? "https://api.adsb.lol";
-    this.sentinels = options.sentinels ?? AVIATION_SENTINELS;
+    const all = options.sentinels ?? AVIATION_SENTINELS;
+    const budget = Math.max(1, Math.min(all.length, Math.floor(options.maxRequestsPerRun ?? defaultRequestBudget())));
+    this.sentinels = all.slice(0, budget);
   }
 
   async fetchRawData(context: FetchContext): Promise<RawBatch<RawData>> {

@@ -20,6 +20,7 @@ type Options = {
   fetcher?: typeof fetch;
   endpoint?: string;
   apiKey?: string;
+  allowNewReferences?: boolean;
 };
 
 function monthDay(iso: string) {
@@ -97,6 +98,7 @@ export async function enrichWeatherWithClimatology(
   options: Options = {},
 ): Promise<WorldEvent[]> {
   let created = 0;
+  const allowNewReferences = options.allowNewReferences !== false;
   const output: WorldEvent[] = [];
   for (const event of events) {
     if (event.type !== "temperature_extreme" || typeof event.properties.cellId !== "string") {
@@ -115,7 +117,11 @@ export async function enrichWeatherWithClimatology(
         kind,
         key,
       );
-      if (!reference && created < MAX_NEW_REFERENCES_PER_REFRESH) {
+      if (
+        !reference &&
+        allowNewReferences &&
+        created < MAX_NEW_REFERENCES_PER_REFRESH
+      ) {
         reference = await fetchReference(event, kind, options);
         await saveTemperatureReference(reference);
         created++;

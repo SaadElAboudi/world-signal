@@ -1,5 +1,6 @@
 import "./env";
 import { maintainCompactStorage } from "../src/database/retention";
+import { getDatabaseBudgetSnapshot } from "../src/database/budget";
 import { ingest, providers } from "../src/server/ingestion";
 import { computeSignals } from "../src/server/compute";
 import { refreshRecentInvestigations } from "../src/server/context-refresh";
@@ -25,6 +26,17 @@ async function main() {
     let failed = false;
     try {
       const config = getConfig();
+      const storage = await getDatabaseBudgetSnapshot();
+      if (storage.state === "protect" || storage.state === "emergency") {
+        const compacted = await maintainCompactStorage();
+        lastMaintenance = Date.now();
+        log("storage.protect.compacted", {
+          state: storage.state,
+          databaseMb: storage.databaseMb,
+          usageRatio: storage.usageRatio,
+          deleted: Object.values(compacted).reduce((sum, value) => sum + value, 0),
+        });
+      }
       for (const provider of providers) {
         const last = await getPool().query(
           "SELECT max(started_at) AS attempt,max(finished_at) FILTER(WHERE history AND status='success') AS history FROM provider_runs WHERE provider=$1",
@@ -70,7 +82,8 @@ async function main() {
         lastEventRefresh = Date.now();
       }
       if (Date.now() - lastContextRefresh >= 15 * 60000) {
-        const contextResult = await refreshRecentInvestigations();
+        const contextLimit = storage.lowPriorityAllowed ? 12 : 3;
+        const contextResult = await refreshRecentInvestigations({ limit: contextLimit });
         log("context.refresh.completed", {
           status: contextResult.status,
           attempted: contextResult.attempted,
