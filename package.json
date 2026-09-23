@@ -13,6 +13,8 @@
     "format": "prettier --write src tests docs README.md playwright.config.ts",
     "db:local": "tsx scripts/db-local.ts",
     "db:migrate": "tsx scripts/migrate.ts",
+    "db:budget": "tsx scripts/db-budget.ts",
+    "db:compact": "tsx scripts/db-compact.ts",
     "ingest:usgs": "tsx scripts/ingest.ts usgs",
     "ingest:firms": "tsx scripts/ingest.ts firms",
     "ingest:all": "tsx scripts/ingest.ts all",
