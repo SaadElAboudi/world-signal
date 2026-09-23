@@ -101,18 +101,17 @@ export async function refreshWeatherWorldEvents(options: RefreshOptions = {}) {
   const archiveEndpoint = process.env.OPEN_METEO_ARCHIVE_ENDPOINT || undefined;
   const apiKey = process.env.OPEN_METEO_API_KEY || undefined;
   const batchSize = integerEnv("OPEN_METEO_BATCH_SIZE", 40, 10, 50);
-  const allowClimatology = await lowPriorityStorageAllowed();
+  const allowNewReferences = await lowPriorityStorageAllowed();
   return refreshProvider(
     new OpenMeteoExtremeWeatherProvider({ endpoint, apiKey, batchSize }),
     options,
     true,
-    allowClimatology
-      ? (events) =>
-          enrichWeatherWithClimatology(events, {
-            endpoint: archiveEndpoint,
-            apiKey,
-          })
-      : undefined,
+    (events) =>
+      enrichWeatherWithClimatology(events, {
+        endpoint: archiveEndpoint,
+        apiKey,
+        allowNewReferences,
+      }),
   );
 }
 
