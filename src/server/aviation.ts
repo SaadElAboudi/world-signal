@@ -7,6 +7,11 @@ import { aviationDisruption } from "../signals/aviation";
 import { ingest } from "./ingestion";
 import { log } from "./log";
 
+function aviationRetentionDays() {
+  const value = Number(process.env.AVIATION_RETENTION_DAYS ?? 21);
+  return Number.isFinite(value) ? Math.max(7, Math.min(60, Math.floor(value))) : 21;
+}
+
 function rowToObservation(row: Record<string, unknown>): Observation {
   return {
     id: String(row.id),
@@ -55,7 +60,7 @@ async function saveSignals(client: PoolClient, signals: WorldSignal[], now: Date
     );
     await client.query(
       "DELETE FROM observations WHERE provider='adsblol' AND occurred_at < $1",
-      [new Date(now.getTime() - 35 * 86_400_000)],
+      [new Date(now.getTime() - aviationRetentionDays() * 86_400_000)],
     );
     await client.query("COMMIT");
   } catch (error) {
@@ -67,11 +72,12 @@ async function saveSignals(client: PoolClient, signals: WorldSignal[], now: Date
 export async function computeAviationSignals(now = new Date()) {
   const client = await getPool().connect();
   try {
+    const retentionDays = aviationRetentionDays();
     const result = await client.query(
       `SELECT * FROM observations
        WHERE provider='adsblol' AND active AND occurred_at >= $1
        ORDER BY occurred_at ASC,id ASC`,
-      [new Date(now.getTime() - 35 * 86_400_000)],
+      [new Date(now.getTime() - retentionDays * 86_400_000)],
     );
     const observations = result.rows.map(rowToObservation);
     const bySeries = new Map<string, Observation[]>();
@@ -93,6 +99,7 @@ export async function computeAviationSignals(now = new Date()) {
     log("aviation.analysis.completed", {
       regions: bySeries.size,
       signals: signals.length,
+      retentionDays,
     });
     return { status: "success" as const, regions: bySeries.size, signals: signals.length };
   } finally {
