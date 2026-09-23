@@ -28,7 +28,7 @@ export function translate(text: string, locale: Locale) {
 }
 const Context = createContext({
   locale: "en" as Locale,
-  setLocale: (_locale: Locale) => {},
+  setLocale: (() => {}) as (locale: Locale) => void,
   t: (s: string) => s,
   countryName: (s: string) => s,
 });

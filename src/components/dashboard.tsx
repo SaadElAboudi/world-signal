@@ -1,4 +1,5 @@
 "use client";
+import { signalTitle } from "@/i18n/signals";
 import { useI18n, LanguageSwitch } from "@/i18n/context";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -18,6 +19,8 @@ import {
   type WorldSignal,
 } from "@/core/types";
 import { Icon } from "./icon";
+import type { WorldEvent } from "@/events/types";
+import { WorldEventDetail, eventLabel } from "./world-event-detail";
 import { CorrelationDetail } from "./correlation-detail";
 import { SignalDetail } from "./signal-detail";
 const Earth = dynamic(() => import("./earth"), {
@@ -64,12 +67,58 @@ const periods = [
 
 export default function Dashboard({
   snapshot: initialSnapshot,
+  initialEvents = [],
+  initialEventsAvailable = false,
 }: {
   snapshot: SignalSnapshot;
+  initialEvents?: WorldEvent[];
+  initialEventsAvailable?: boolean;
 }) {
   const { t, locale, countryName } = useI18n();
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const demo = snapshot.mode === "demo";
+  const [view, setView] = useState<"signals" | "events">("signals");
+  const [worldEvents, setWorldEvents] = useState(initialEvents);
+  const [eventsAvailable, setEventsAvailable] = useState(
+    initialEventsAvailable,
+  );
+  const [eventCategory, setEventCategory] = useState<string | null>(null);
+  const [worldEventId, setWorldEventId] = useState<string | null>(null);
+  const eventCategories = [
+    ["natural_hazard", "Natural hazards", "Risques naturels"],
+    ["climate", "Weather & climate", "Météo et climat"],
+    ["infrastructure", "Networks", "Réseaux"],
+    ["environment", "Environment", "Environnement"],
+    ["mobility", "Mobility", "Mobilité"],
+    ["earth_observation", "Earth observation", "Observation terrestre"],
+  ];
+  useEffect(() => {
+    if (demo) return;
+    const abort = new AbortController();
+    const refresh = async () => {
+      try {
+        const r = await fetch("/api/events?status=active&limit=500", {
+          signal: abort.signal,
+          cache: "no-store",
+        });
+        if (!r.ok) throw Error();
+        const data = await r.json();
+        const events = Array.isArray(data) ? data : data.events;
+        if (!Array.isArray(events)) throw Error();
+        setWorldEvents(events);
+        setEventsAvailable(true);
+      } catch {
+        if (!abort.signal.aborted) setEventsAvailable(false);
+      }
+    };
+    void refresh();
+    const timer = setInterval(refresh, 60000);
+    return () => {
+      abort.abort();
+      clearInterval(timer);
+    };
+  }, [demo]);
+
   const [types, setTypes] = useState<SignalType[]>(LAYERS.map((l) => l.id));
   const [hours, setHours] = useState(24);
   const [query, setQuery] = useState("");
@@ -106,6 +155,19 @@ export default function Dashboard({
       }),
     [snapshot.signals, hours, asOf],
   );
+  const visibleWorldEvents = worldEvents.filter(
+    (event) =>
+      (!eventCategory || event.category === eventCategory) &&
+      (!significantOnly || event.severity === "significant") &&
+      Date.parse(event.updatedAt) >= Date.parse(asOf) - hours * 3600000 &&
+      Date.parse(event.updatedAt) <= Date.parse(asOf) &&
+      (!query ||
+        `${event.title} ${eventLabel(event, locale)} ${event.source.name}`
+          .toLowerCase()
+          .includes(query.toLowerCase())),
+  );
+  const selectedWorldEvent =
+    visibleWorldEvents.find((e) => e.id === worldEventId) ?? null;
   const visibleEvents = (snapshot.correlations ?? []).filter(
     (event) =>
       event.signalIds.every((id) =>
@@ -142,6 +204,7 @@ export default function Dashboard({
       if (e.key === "Escape") {
         setSelectedId(null);
         setSelectedEventId(null);
+        setWorldEventId(null);
         search.current?.blur();
       }
     };
@@ -225,6 +288,9 @@ export default function Dashboard({
       });
   };
   const reset = () => {
+    setWorldEventId(null);
+    setEventCategory(null);
+    setSelectedEventId(null);
     setTypes(LAYERS.map((l) => l.id));
     setQuery("");
     setCountry(null);
@@ -288,44 +354,73 @@ export default function Dashboard({
             <span>{t("DATA LAYERS")}</span>
             <span className="tiny-count">{t("04")}</span>
           </div>
-          <div className="layer-list">
-            {LAYERS.map((layer) => {
-              const active = types.includes(layer.id);
-              return (
+          {view === "events" ? (
+            <div className="layer-list event-category-list">
+              <button
+                className={`layer-button ${eventCategory === null ? "active" : ""}`}
+                onClick={() => setEventCategory(null)}
+              >
+                {locale === "fr" ? "Tous les événements" : "All events"}
+              </button>
+              {eventCategories.map(([id, en, fr]) => (
                 <button
-                  key={layer.id}
-                  aria-label={t(layer.name)}
-                  title={t(layer.description)}
-                  className={`layer-button ${active ? "active" : ""}`}
-                  aria-pressed={active}
+                  className={`layer-button ${eventCategory === id ? "active" : ""}`}
+                  key={id}
+                  aria-label={locale === "fr" ? fr : en}
+                  aria-pressed={eventCategory === id}
                   onClick={() =>
-                    setTypes((prev) =>
-                      active
-                        ? prev.filter((t) => t !== layer.id)
-                        : [...prev, layer.id],
-                    )
+                    setEventCategory(eventCategory === id ? null : id)
                   }
                 >
-                  <span className="layer-icon" style={{ color: layer.color }}>
-                    <Icon name={layer.id} size={18} />
-                  </span>
                   <span className="layer-name">
-                    {layer.name}
-                    <small>{layer.description}</small>
+                    {locale === "fr" ? fr : en}
                   </span>
                   <span className="layer-count">
-                    {inWindow
-                      .filter((s) => s.type === layer.id)
-                      .length.toString()
-                      .padStart(2, "0")}
-                  </span>
-                  <span className="checkbox">
-                    {active && <Icon name="check" size={10} />}
+                    {worldEvents.filter((e) => e.category === id).length}
                   </span>
                 </button>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="layer-list">
+              {LAYERS.map((layer) => {
+                const active = types.includes(layer.id);
+                return (
+                  <button
+                    key={layer.id}
+                    aria-label={t(layer.name)}
+                    title={t(layer.description)}
+                    className={`layer-button ${active ? "active" : ""}`}
+                    aria-pressed={active}
+                    onClick={() =>
+                      setTypes((prev) =>
+                        active
+                          ? prev.filter((t) => t !== layer.id)
+                          : [...prev, layer.id],
+                      )
+                    }
+                  >
+                    <span className="layer-icon" style={{ color: layer.color }}>
+                      <Icon name={layer.id} size={18} />
+                    </span>
+                    <span className="layer-name">
+                      {layer.name}
+                      <small>{layer.description}</small>
+                    </span>
+                    <span className="layer-count">
+                      {inWindow
+                        .filter((s) => s.type === layer.id)
+                        .length.toString()
+                        .padStart(2, "0")}
+                    </span>
+                    <span className="checkbox">
+                      {active && <Icon name="check" size={10} />}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <div className="sidebar-divider" />
           <div className="sidebar-label">{t("SIGNAL SEVERITY")}</div>
           <button
@@ -387,8 +482,15 @@ export default function Dashboard({
             </div>
             <h1>{t("What changed?")}</h1>
             <p>
-              <strong>{visible.length}</strong>
-              {t("unusual signals.")} <span>{t("One connected planet.")}</span>
+              <strong>
+                {view === "events" ? visibleWorldEvents.length : visible.length}
+              </strong>{" "}
+              {view === "events"
+                ? locale === "fr"
+                  ? "événements signalés."
+                  : "reported events."
+                : t("unusual signals.")}{" "}
+              <span>{t("One connected planet.")}</span>
             </p>
           </div>
           <div className="map-meta">
@@ -412,17 +514,21 @@ export default function Dashboard({
           </div>
           <GlobeBoundary>
             <Earth
-              signals={visible}
+              signals={view === "signals" ? visible : []}
+              worldEvents={view === "events" ? visibleWorldEvents : []}
+              selectedWorldEvent={selectedWorldEvent}
+              onWorldEvent={(event) => setWorldEventId(event.id)}
               selected={selected}
-              events={visibleEvents}
+              events={view === "signals" ? visibleEvents : []}
               selectedEvent={selectedEvent}
               onEvent={(event) => {
                 setSelectedId(null);
                 setSelectedEventId(event.id);
               }}
-              country={country}
+              country={view === "signals" ? country : null}
               onSelect={select}
               onCountry={(name) => {
+                if (view !== "signals") return;
                 setCountry(name);
                 setSelectedId(null);
               }}
@@ -432,7 +538,9 @@ export default function Dashboard({
             className="map-search"
             onSubmit={(e) => {
               e.preventDefault();
-              if (visible[0]) select(visible[0]);
+              if (view === "events")
+                setWorldEventId(visibleWorldEvents[0]?.id ?? null);
+              else if (visible[0]) select(visible[0]);
             }}
           >
             <Icon name="search" size={17} />
@@ -460,7 +568,7 @@ export default function Dashboard({
               <kbd>/</kbd>
             )}
           </form>
-          {country && (
+          {country && view === "signals" && (
             <div className="country-summary">
               <div>
                 <span>{t("REGION FOCUS")}</span>
@@ -494,16 +602,18 @@ export default function Dashboard({
           )}
           <div className="globe-caption">
             <span>
-              <i /> {significantCount}
+              <i />{" "}
+              {view === "signals"
+                ? significantCount
+                : visibleWorldEvents.filter((e) => e.severity === "significant")
+                    .length}{" "}
               {t("significant")}
             </span>
-            <span className="activity-counts">
-              {visible.filter((s) => s.severity === "notable").length}
-              {t("notable ·")}
-              {visible.filter((s) => s.severity === "elevated").length}
-              {t("elevated ·")}
-              {visibleEvents.length}
-              {t("multi")}
+            <span className="activity-counts" hidden={view !== "signals"}>
+              {visible.filter((s) => s.severity === "notable").length}{" "}
+              {t("notable ·")}{" "}
+              {visible.filter((s) => s.severity === "elevated").length}{" "}
+              {t("elevated ·")} {visibleEvents.length} {t("multi")}
             </span>
             <span className="globe-instructions">
               {t("DRAG TO EXPLORE")}
@@ -514,7 +624,111 @@ export default function Dashboard({
           </div>
         </section>
         <aside className="feed-panel" aria-label={t("Signal feed")}>
-          {selectedEvent ? (
+          {!demo && (
+            <div
+              className="feed-tabs"
+              role="tablist"
+              aria-label={locale === "fr" ? "Type de données" : "Data view"}
+            >
+              <button
+                role="tab"
+                aria-selected={view === "signals"}
+                onClick={() => {
+                  setView("signals");
+                  setCountry(null);
+                }}
+              >
+                {locale === "fr" ? "Signaux inhabituels" : "Unusual signals"}
+              </button>
+              <button
+                role="tab"
+                aria-selected={view === "events"}
+                onClick={() => {
+                  setView("events");
+                  setCountry(null);
+                  setSelectedId(null);
+                }}
+              >
+                {locale === "fr" ? "Événements signalés" : "Reported events"}
+              </button>
+            </div>
+          )}
+          {view === "events" ? (
+            selectedWorldEvent ? (
+              <WorldEventDetail
+                event={selectedWorldEvent}
+                onClose={() => setWorldEventId(null)}
+              />
+            ) : (
+              <>
+                <div className="panel-heading">
+                  <span>
+                    {locale === "fr"
+                      ? "ÉVÉNEMENTS SIGNALÉS"
+                      : "REPORTED EVENTS"}
+                  </span>
+                  <span>{visibleWorldEvents.length}</span>
+                </div>
+                <div className="feed-subtitle">
+                  {locale === "fr"
+                    ? "Mis à jour pendant la période sélectionnée"
+                    : "Updated within the selected time window"}
+                </div>
+                <div className="signal-list">
+                  {!eventsAvailable && (
+                    <p className="context-note" role="status">
+                      {locale === "fr"
+                        ? "Actualisation indisponible. Les dernières données sont conservées."
+                        : "Refresh unavailable. Showing the last available data."}
+                    </p>
+                  )}
+                  {visibleWorldEvents.map((event) => (
+                    <button
+                      className={`signal-card ${event.severity}`}
+                      key={event.id}
+                      onClick={() => setWorldEventId(event.id)}
+                    >
+                      <div className="signal-card-top">
+                        <span>◇ {eventLabel(event, locale)}</span>
+                        <time>
+                          {new Date(event.updatedAt)
+                            .toISOString()
+                            .slice(11, 16)}
+                        </time>
+                      </div>
+                      <h3>{event.title}</h3>
+                      <div className="signal-card-bottom">
+                        <span>{event.source.name}</span>
+                        <small>
+                          {event.location.latitude.toFixed(1)}°,{" "}
+                          {event.location.longitude.toFixed(1)}°
+                        </small>
+                      </div>
+                    </button>
+                  ))}
+                  {!visibleWorldEvents.length && (
+                    <div className="empty-state">
+                      <h3>
+                        {locale === "fr"
+                          ? "Aucun événement dans cette période"
+                          : "No events in this time window"}
+                      </h3>
+                      <p>
+                        {locale === "fr"
+                          ? "Élargissez la période ou changez de catégorie. L’absence de résultat ne prouve pas l’absence d’activité."
+                          : "Widen the period or change category. No result does not prove absence of activity."}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <div className="feed-footer">
+                  {locale === "fr"
+                    ? "Rapports de sources et seuils documentés · pas un indice de danger"
+                    : "Source reports and documented thresholds · not a danger index"}
+                </div>
+              </>
+            )
+          ) : selectedEvent ? (
             <CorrelationDetail
               event={selectedEvent}
               signals={snapshot.signals}
@@ -540,7 +754,7 @@ export default function Dashboard({
               </div>
               <div className="feed-subtitle">
                 <span>
-                  {country ? shortCountry(country) : t("Around the world")}
+                  {country ? countryName(country) : t("Around the world")}
                 </span>
                 <span>
                   {t("PRIORITY & RECENCY")}
@@ -552,7 +766,7 @@ export default function Dashboard({
                   "signalIds" in signal ? (
                     <button
                       key={signal.id}
-                      className={`signal-card multi-signal-card ${t(signal.severity)}`}
+                      className={`signal-card multi-signal-card ${signal.severity}`}
                       onClick={() => {
                         setSelectedId(null);
                         setSelectedEventId(signal.id);
@@ -577,7 +791,7 @@ export default function Dashboard({
                       </p>
                       <div className="signal-card-bottom">
                         <span className={`severity ${signal.severity}`}>
-                          {signal.severity}
+                          {t(signal.severity)}
                         </span>
                         <small>
                           {signal.signalTypes.length}
@@ -590,12 +804,12 @@ export default function Dashboard({
                       key={signal.id}
                       className={`signal-card ${signal.severity}`}
                       onClick={() => select(signal)}
-                      aria-label={`View ${signal.country} signal: ${signal.title}`}
+                      aria-label={`View ${signal.country} signal: ${signalTitle(signal, locale)}`}
                     >
                       <div className="signal-card-top">
                         <span>
                           <Icon name={signal.type} size={14} />
-                          {shortCountry(signal.country)}
+                          {countryName(signal.country)}
                         </span>
                         <time dateTime={signal.timestamp}>
                           {new Date(signal.timestamp)
@@ -604,19 +818,19 @@ export default function Dashboard({
                         </time>
                       </div>
                       <h3>
-                        {signal.title}
+                        {signalTitle(signal, locale)}
                         {signal.status === "resolved" ? t(" · resolved") : ""}
                       </h3>
                       <div className="signal-card-bottom">
                         <span className={`severity ${signal.severity}`}>
                           <i />
-                          {signal.severity}
+                          {t(signal.severity)}
                         </span>
                         <strong>
                           {deviationLabel(signal)}
                           <small>
                             {signal.kind === "earthquake-event"
-                              ? "observed"
+                              ? t("observed")
                               : t("vs baseline")}
                           </small>
                         </strong>

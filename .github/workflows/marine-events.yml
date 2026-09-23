@@ -1,0 +1,32 @@
+name: Refresh marine events
+on:
+  schedule:
+    - cron: "41 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: world-signal-production-marine
+  cancel-in-progress: false
+jobs:
+  marine:
+    if: vars.WORLD_SIGNAL_INGEST_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      DATABASE_URL: ${{ secrets.WORLD_SIGNAL_DATABASE_URL }}
+      DATABASE_SSL_CA: ${{ secrets.WORLD_SIGNAL_DATABASE_CA }}
+      DATABASE_POOL_MAX: "2"
+      WORLD_SIGNAL_MODE: live
+      OPEN_METEO_MARINE_ENABLED: "true"
+      OPEN_METEO_MARINE_ENDPOINT: ${{ vars.OPEN_METEO_MARINE_ENDPOINT || 'https://marine-api.open-meteo.com/v1/marine' }}
+      OPEN_METEO_API_KEY: ${{ secrets.OPEN_METEO_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Refresh marine SST anomalies
+        run: npm run events:marine

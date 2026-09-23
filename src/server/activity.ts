@@ -32,7 +32,7 @@ export async function computeActivitySignals(now = new Date()) {
       )
     ).rows[0].acquired;
     if (!locked) return;
-    for (const provider of ["ioda", "adsblol"]) {
+    for (const provider of ["ioda"]) {
       const last = await client.query(
         "SELECT * FROM provider_runs WHERE provider=$1 ORDER BY started_at DESC LIMIT 1",
         [provider],

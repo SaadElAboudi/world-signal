@@ -1,8 +1,12 @@
 import { I18nProvider } from "@/i18n/context";
 import { cookies } from "next/headers";
 import Dashboard from "@/components/dashboard";
+import { listWorldEvents } from "@/database/world-events";
+import type { WorldEvent } from "@/events/types";
 import { getSnapshot } from "@/server/snapshot";
+
 export const dynamic = "force-dynamic";
+
 export default async function Home({
   searchParams,
 }: {
@@ -15,9 +19,24 @@ export default async function Home({
   const params = new URLSearchParams();
   if (mode === "demo" || mode === "live") params.set("mode", mode);
   const snapshot = await getSnapshot(params);
+  let events: WorldEvent[] = [];
+  let eventsAvailable = snapshot.mode === "demo";
+  if (snapshot.mode === "live") {
+    try {
+      events = await listWorldEvents({ status: "active", limit: 500 });
+      eventsAvailable = true;
+    } catch {
+      eventsAvailable = false;
+    }
+  }
   return (
     <I18nProvider initialLocale={locale}>
-      <Dashboard key={snapshot.mode} snapshot={snapshot} />
+      <Dashboard
+        key={snapshot.mode}
+        snapshot={snapshot}
+        initialEvents={events}
+        initialEventsAvailable={eventsAvailable}
+      />
     </I18nProvider>
   );
 }

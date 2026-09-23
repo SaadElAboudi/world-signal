@@ -346,8 +346,7 @@ export function reconcileEvents(
       current.some(
         (candidate) =>
           event.signalIds.every((id) => candidate.signalIds.includes(id)) &&
-          candidate.provenance === event.provenance &&
-          candidate.windowHours === event.windowHours,
+          candidate.provenance === event.provenance,
       )
     )
       continue;

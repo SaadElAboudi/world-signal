@@ -1,0 +1,31 @@
+name: Refresh internet outages
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: world-signal-production-internet
+  cancel-in-progress: false
+jobs:
+  internet:
+    if: vars.WORLD_SIGNAL_INGEST_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      DATABASE_URL: ${{ secrets.WORLD_SIGNAL_DATABASE_URL }}
+      DATABASE_SSL_CA: ${{ secrets.WORLD_SIGNAL_DATABASE_CA }}
+      DATABASE_POOL_MAX: "2"
+      WORLD_SIGNAL_MODE: live
+      IODA_ENABLED: "true"
+      IODA_ENDPOINT: ${{ vars.IODA_ENDPOINT || 'https://api.ioda.inetintel.cc.gatech.edu/v2/outages/events' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Refresh IODA internet outages
+        run: npm run events:internet

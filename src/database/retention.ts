@@ -1,7 +1,9 @@
 import { getPool } from "./client";
 import { getConfig } from "../server/config";
-/** Explicit compact-storage profile: preserve 35 days of references and daily older evidence. */
+import { pruneWorldEventStorage } from "./world-events";
+/** Explicit compact-storage profile: keep current events, 30 days of event changes, and 35 days of resolved events. */
 export async function maintainCompactStorage(now = new Date()) {
+  await pruneWorldEventStorage(now, 30, 35);
   if (!getConfig().firmsRawRetentionHours) return;
   const pool = getPool();
   await pool.query(

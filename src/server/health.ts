@@ -33,7 +33,7 @@ export function classifyHealth(
           ? config.firmsIntervalMinutes
           : id === "ioda"
             ? config.internetIntervalMinutes
-            : config.aviationIntervalMinutes,
+            : config.adsbLolIntervalMinutes,
     status: "unavailable",
     lastSuccessAt: row?.success_at?.toISOString() ?? null,
     lastAnalysisAt: row?.analysed_at?.toISOString() ?? null,
@@ -55,7 +55,7 @@ export function classifyHealth(
         ? config.firmsStaleMinutes
         : id === "ioda"
           ? config.internetStaleMinutes
-          : config.aviationStaleMinutes) * 60000;
+          : config.adsbLolStaleMinutes) * 60000;
   const age =
     now.getTime() -
     Math.min(row.success_at.getTime(), row.source_as_of.getTime());

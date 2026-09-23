@@ -36,7 +36,9 @@ export interface WorldSignal {
     | "earthquake-cluster"
     | "fire-cluster"
     | "internet-anomaly"
-    | "aviation-anomaly";
+    | "aviation-anomaly"
+    | "aviation-disruption";
+
   startedAt?: string;
   updatedAt?: string;
   sourceAsOf?: string;

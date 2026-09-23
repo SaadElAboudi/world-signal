@@ -1,5 +1,4 @@
 import { IodaProvider } from "../providers/ioda";
-import { AdsbProvider } from "../providers/adsb-lol";
 import { getConfig } from "./config";
 import { getPool } from "../database/client";
 import { storeObservations } from "../database/observations";
@@ -11,7 +10,6 @@ export const providers = [
   new UsgsProvider(),
   new FirmsProvider(),
   new IodaProvider(),
-  new AdsbProvider(),
 ];
 export async function ingest(
   provider: ObservationProvider,

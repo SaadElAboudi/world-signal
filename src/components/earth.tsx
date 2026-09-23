@@ -10,6 +10,8 @@ import {
 } from "react";
 import Globe, { type GlobeMethods } from "react-globe.gl";
 import { SEVERITY_COLOR, type WorldSignal } from "@/core/types";
+import type { WorldEvent } from "@/events/types";
+import { eventLabel } from "./world-event-detail";
 import type { CorrelatedEvent } from "@/correlations/types";
 import { Icon } from "./icon";
 const motionQuery = "(prefers-reduced-motion: reduce)";
@@ -26,6 +28,9 @@ interface Country {
 export default function Earth({
   signals,
   events = [],
+  worldEvents = [],
+  selectedWorldEvent,
+  onWorldEvent,
   selectedEvent,
   onEvent,
   selected,
@@ -35,6 +40,9 @@ export default function Earth({
 }: {
   signals: WorldSignal[];
   events?: CorrelatedEvent[];
+  worldEvents?: WorldEvent[];
+  selectedWorldEvent?: WorldEvent | null;
+  onWorldEvent?: (event: WorldEvent) => void;
   selectedEvent?: CorrelatedEvent | null;
   onEvent?: (event: CorrelatedEvent) => void;
   selected: WorldSignal | null;
@@ -42,7 +50,7 @@ export default function Earth({
   onSelect: (s: WorldSignal) => void;
   onCountry: (name: string) => void;
 }) {
-  const { t, countryName } = useI18n();
+  const { t, countryName, locale } = useI18n();
   const labelSignals = useMemo(() => {
     if (signals.length <= 14) return signals;
     const countries = new Set<string>();
@@ -90,13 +98,16 @@ export default function Earth({
     };
   }, []);
   useEffect(() => {
-    if (!ready || (!selected && !selectedEvent)) return;
-    const focus = selectedEvent?.geographicScope ?? selected!;
+    if (!ready || (!selected && !selectedEvent && !selectedWorldEvent)) return;
+    const focus =
+      selectedWorldEvent?.location ??
+      selectedEvent?.geographicScope ??
+      selected!;
     globe.current?.pointOfView(
       { lat: focus.latitude, lng: focus.longitude, altitude: 1.85 },
       reducedMotion ? 0 : 1100,
     );
-  }, [ready, selected, selectedEvent, reducedMotion]);
+  }, [ready, selected, selectedEvent, selectedWorldEvent, reducedMotion]);
   useEffect(() => {
     if (!ready || !globe.current) return;
     globe.current.controls().autoRotate = rotating && !reducedMotion;
@@ -156,18 +167,44 @@ export default function Earth({
         polygonStrokeColor={() => "#345558"}
         polygonLabel={(d) => countryName((d as Country).properties.ADMIN)}
         onPolygonClick={(d) => onCountry((d as Country).properties.ADMIN)}
-        htmlElementsData={events}
-        htmlLat={(d) => (d as CorrelatedEvent).geographicScope.latitude}
-        htmlLng={(d) => (d as CorrelatedEvent).geographicScope.longitude}
+        htmlElementsData={[...events, ...worldEvents]}
+        htmlLat={(d) =>
+          ("location" in d
+            ? (d as WorldEvent).location
+            : (d as CorrelatedEvent).geographicScope
+          ).latitude
+        }
+        htmlLng={(d) =>
+          ("location" in d
+            ? (d as WorldEvent).location
+            : (d as CorrelatedEvent).geographicScope
+          ).longitude
+        }
         htmlAltitude={0.06}
         htmlElement={(d) => {
+          if ("location" in d) {
+            const event = d as WorldEvent;
+            const button = document.createElement("button");
+            button.className = "world-event-marker";
+            button.textContent = "◇";
+            button.style.color =
+              event.severity === "info"
+                ? "#7cb6ff"
+                : SEVERITY_COLOR[event.severity];
+            button.setAttribute(
+              "aria-label",
+              `${eventLabel(event, locale)}: ${event.title}`,
+            );
+            button.onclick = () => onWorldEvent?.(event);
+            return button;
+          }
           const event = d as CorrelatedEvent;
           const button = document.createElement("button");
           button.className = "correlation-marker";
           button.textContent = "◎";
           button.setAttribute(
             "aria-label",
-            `Multi-signal event: ${event.geographicScope.country ?? ""}`,
+            `${t("Multi-signal event")}: ${countryName(event.geographicScope.country ?? "")}`,
           );
           button.onclick = () => onEvent?.(event);
           return button;

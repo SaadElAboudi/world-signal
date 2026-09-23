@@ -37,13 +37,17 @@ export async function computeCorrelations(now = new Date()) {
     // complete current evidence remains in signals + signal_evidence.
     await client.query(
       `INSERT INTO signal_versions(signal_id,recorded_at,provider,started_at,observed_at,resolved_at,payload)
-   SELECT s.id,$1,s.provider,s.started_at,s.observed_at,s.resolved_at,(s.payload-'baseline'-'updatedAt'-'sourceAsOf') || '{"baseline":[]}'::jsonb
+   SELECT s.id,$1,s.provider,s.started_at,s.observed_at,s.resolved_at,(s.payload-'baseline'-'updatedAt') || '{"baseline":[]}'::jsonb
    FROM signals s WHERE s.observed_at>$1::timestamptz-interval '35 days'
-   AND (SELECT payload FROM signal_versions v WHERE v.signal_id=s.id ORDER BY recorded_at DESC LIMIT 1) IS DISTINCT FROM ((s.payload-'baseline'-'updatedAt'-'sourceAsOf') || '{"baseline":[]}'::jsonb)
+   AND (SELECT payload FROM signal_versions v WHERE v.signal_id=s.id ORDER BY recorded_at DESC LIMIT 1) IS DISTINCT FROM ((s.payload-'baseline'-'updatedAt') || '{"baseline":[]}'::jsonb)
    ON CONFLICT DO NOTHING`,
       [now],
     );
-    const inputs = await historicalInputs(now, 24);
+    const lifecycleInputs = await historicalInputs(now, 35 * 24);
+    const inputs = lifecycleInputs.filter(
+      (input) =>
+        Date.parse(input.signal.timestamp) >= now.getTime() - 24 * 3600000,
+    );
     const all = [1, 6, 24].flatMap(
       (window) =>
         correlate(inputs, {
@@ -75,7 +79,7 @@ export async function computeCorrelations(now = new Date()) {
     const events = reconcileEvents(
       previous,
       chosen,
-      inputs,
+      lifecycleInputs,
       new Set(health.filter((p) => p.status === "healthy").map((p) => p.id!)),
       now.toISOString(),
     );

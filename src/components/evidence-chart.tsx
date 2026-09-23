@@ -2,7 +2,7 @@
 import { useI18n } from "@/i18n/context";
 import type { WorldSignal } from "@/core/types";
 export function EvidenceChart({ signal }: { signal: WorldSignal }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const width = 320,
     height = 125,
     pad = 14;
