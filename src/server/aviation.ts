@@ -3,6 +3,7 @@ import type { Observation } from "../providers/contract";
 import type { WorldSignal } from "../core/types";
 import { getPool } from "../database/client";
 import { AdsbLolProvider } from "../providers/adsblol";
+import { matchedActivityBaseline } from "../signals/matched-baseline";
 import { aviationDisruption } from "../signals/aviation";
 import { ingest } from "./ingestion";
 import { log } from "./log";
@@ -26,7 +27,12 @@ function rowToObservation(row: Record<string, unknown>): Observation {
   };
 }
 
-async function saveSignals(client: PoolClient, signals: WorldSignal[], now: Date) {
+async function saveSignals(
+  client: PoolClient,
+  signals: WorldSignal[],
+  recoverable: string[],
+  now: Date,
+) {
   await client.query("BEGIN");
   try {
     const payloads = JSON.stringify(signals);
@@ -46,8 +52,8 @@ async function saveSignals(client: PoolClient, signals: WorldSignal[], now: Date
     );
     await client.query(
       `UPDATE signals SET resolved_at=$2,updated_at=$2,payload=jsonb_set(payload,'{status}','"resolved"')
-       WHERE provider='adsblol' AND resolved_at IS NULL AND NOT(id=ANY($1::text[]))`,
-      [signals.map((signal) => signal.id), now],
+       WHERE provider='adsblol' AND resolved_at IS NULL AND id=ANY($1::text[])`,
+      [recoverable, now],
     );
     await client.query(
       "UPDATE provider_runs SET analysed_at=$1,analysis_error=NULL WHERE id=(SELECT id FROM provider_runs WHERE provider='adsblol' AND status='success' ORDER BY finished_at DESC LIMIT 1)",
@@ -66,7 +72,14 @@ async function saveSignals(client: PoolClient, signals: WorldSignal[], now: Date
 
 export async function computeAviationSignals(now = new Date()) {
   const client = await getPool().connect();
+  let locked = false;
   try {
+    locked = (
+      await client.query(
+        "SELECT pg_try_advisory_lock(hashtext('world-signal:aviation-analysis')) AS acquired",
+      )
+    ).rows[0].acquired;
+    if (!locked) return { status: "locked" as const, regions: 0, signals: 0 };
     const result = await client.query(
       `SELECT * FROM observations
        WHERE provider='adsblol' AND active AND occurred_at >= $1
@@ -83,19 +96,46 @@ export async function computeAviationSignals(now = new Date()) {
       bySeries.set(key, series);
     }
     const signals: WorldSignal[] = [];
+    const recoverable: string[] = [];
     for (const series of bySeries.values()) {
       const current = series[series.length - 1];
       if (!current) continue;
       const signal = aviationDisruption(current, series.slice(0, -1), now);
       if (signal) signals.push(signal);
+      else {
+        const baseline = matchedActivityBaseline(current, series.slice(0, -1), {
+          now,
+          match: "hour-and-day-kind",
+          minSamples: 7,
+          maxAgeMinutes: 45,
+        });
+        if (
+          baseline.available &&
+          baseline.expected !== null &&
+          baseline.expected >= 5 &&
+          baseline.deviation !== null &&
+          baseline.deviation > -40
+        )
+          recoverable.push(
+            `adsblol:disruption:${String(current.properties.seriesKey ?? current.cellId)}`,
+          );
+      }
     }
-    await saveSignals(client, signals, now);
+    await saveSignals(client, signals, recoverable, now);
     log("aviation.analysis.completed", {
       regions: bySeries.size,
       signals: signals.length,
     });
-    return { status: "success" as const, regions: bySeries.size, signals: signals.length };
+    return {
+      status: "success" as const,
+      regions: bySeries.size,
+      signals: signals.length,
+    };
   } finally {
+    if (locked)
+      await client.query(
+        "SELECT pg_advisory_unlock(hashtext('world-signal:aviation-analysis'))",
+      );
     client.release();
   }
 }

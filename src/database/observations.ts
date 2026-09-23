@@ -57,10 +57,18 @@ export async function storeObservations(
       RETURNING (xmax=0) AS inserted)
       SELECT count(*) FILTER(WHERE inserted)::int AS inserted, count(*) FILTER(WHERE NOT inserted)::int AS updated FROM upserts`);
     // Only a validated, complete feed can retract previously ingested observations.
-    const retracted = await client.query(
-      `UPDATE observations o SET active=false,ingested_at=now(),source_updated_at=$4 WHERE provider=$1 AND active AND occurred_at >= $2 AND occurred_at <= $3 AND source_updated_at <= $4 AND NOT EXISTS(SELECT 1 FROM incoming_observations i WHERE i.id=o.id)`,
-      [provider, batch.coverageStart, batch.coverageEnd, batch.sourceAsOf],
-    );
+    const retracted =
+      batch.completeSnapshot === false
+        ? { rowCount: 0 }
+        : await client.query(
+            `UPDATE observations o SET active=false,ingested_at=now(),source_updated_at=$4 WHERE provider=$1 AND active AND occurred_at >= $2 AND occurred_at <= $3 AND source_updated_at <= $4 AND NOT EXISTS(SELECT 1 FROM incoming_observations i WHERE i.id=o.id)`,
+            [
+              provider,
+              batch.coverageStart,
+              batch.coverageEnd,
+              batch.sourceAsOf,
+            ],
+          );
     if (compact) {
       await client.query(
         "DELETE FROM observations WHERE provider='firms' AND occurred_at<$1",

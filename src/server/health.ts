@@ -1,3 +1,4 @@
+import { operationalProviders, providerMetadata } from "../providers/registry";
 import { getPool } from "../database/client";
 import { getConfig } from "./config";
 import type { ProviderHealth } from "../core/types";
@@ -15,12 +16,6 @@ export interface RunHealthRow {
   records_inserted: number;
   records_updated: number;
 }
-function providerName(id: string) {
-  if (id === "usgs") return "USGS";
-  if (id === "firms") return "NASA FIRMS · NOAA-20";
-  if (id === "adsblol") return "ADSB.lol";
-  return id;
-}
 export function classifyHealth(
   row: RunHealthRow | undefined,
   id: string,
@@ -29,7 +24,16 @@ export function classifyHealth(
   const config = getConfig();
   const base: ProviderHealth = {
     id,
-    name: providerName(id),
+    name: providerMetadata(id)?.name ?? id,
+    system: providerMetadata(id)?.system,
+    cadenceMinutes:
+      id === "usgs"
+        ? config.usgsIntervalMinutes
+        : id === "firms"
+          ? config.firmsIntervalMinutes
+          : id === "ioda"
+            ? config.internetIntervalMinutes
+            : config.adsbLolIntervalMinutes,
     status: "unavailable",
     lastSuccessAt: row?.success_at?.toISOString() ?? null,
     lastAnalysisAt: row?.analysed_at?.toISOString() ?? null,
@@ -44,13 +48,14 @@ export function classifyHealth(
   if (id === "firms" && config.firmsTransport === "api" && !config.firmsKey)
     return { ...base, error: "missing_credentials" };
   if (!row?.success_at || !row.source_as_of) return base;
-  const staleMinutes =
-    id === "usgs"
+  const budget =
+    (id === "usgs"
       ? config.usgsStaleMinutes
-      : id === "adsblol"
-        ? config.adsbLolStaleMinutes
-        : config.firmsStaleMinutes;
-  const budget = staleMinutes * 60000;
+      : id === "firms"
+        ? config.firmsStaleMinutes
+        : id === "ioda"
+          ? config.internetStaleMinutes
+          : config.adsbLolStaleMinutes) * 60000;
   const age =
     now.getTime() -
     Math.min(row.success_at.getTime(), row.source_as_of.getTime());
@@ -75,13 +80,40 @@ export async function getProviderHealth(
     success.finished_at AS success_at, success.analysed_at, success.analysis_error, success.source_as_of, success.latest_observation_at, latest.records_received,latest.records_inserted,latest.records_updated
     FROM (SELECT DISTINCT ON(provider) * FROM provider_runs ORDER BY provider,started_at DESC) latest
     LEFT JOIN LATERAL (SELECT * FROM provider_runs r WHERE r.provider=latest.provider AND r.status='success' ORDER BY finished_at DESC LIMIT 1) success ON true`);
-  const ids = ["usgs", "firms"];
-  if (result.rows.some((row) => row.provider === "adsblol")) ids.push("adsblol");
-  return ids.map((id) =>
+  const states = operationalProviders.map(({ id }) =>
     classifyHealth(
       result.rows.find((r) => r.provider === id),
       id,
       now,
     ),
   );
+  const scopes = await getPool().query(
+    "SELECT provider,count(*)::int AS configured,count(*) FILTER(WHERE ok)::int AS available,count(*) FILTER(WHERE ok AND latest_observation_at>$1::timestamptz-interval '3 hours')::int AS fresh FROM provider_scopes GROUP BY provider",
+    [now],
+  );
+  const history = await getPool().query(
+    "SELECT provider,extract(epoch FROM (max(occurred_at)-min(occurred_at)))/86400 AS days FROM observations WHERE provider IN ('ioda','adsblol') AND active GROUP BY provider",
+  );
+  for (const state of states) {
+    const scope = scopes.rows.find((s) => s.provider === state.id);
+    if (scope) {
+      state.scopes = {
+        configured: scope.configured,
+        available: scope.available,
+        fresh: scope.fresh,
+      };
+      if (scope.available < scope.configured && state.status === "healthy") {
+        state.status = "delayed";
+        state.error = "partial_scope_coverage";
+      }
+    }
+    if (state.id === "ioda" || state.id === "adsblol") {
+      state.historyDays = Number(
+        history.rows.find((r) => r.provider === state.id)?.days ?? 0,
+      );
+      state.analysisState =
+        state.historyDays >= 10 ? "ready" : "collecting_history";
+    }
+  }
+  return states;
 }

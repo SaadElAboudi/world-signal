@@ -1,4 +1,5 @@
 "use client";
+import { useI18n } from "@/i18n/context";
 import {
   useEffect,
   useRef,
@@ -9,6 +10,9 @@ import {
 } from "react";
 import Globe, { type GlobeMethods } from "react-globe.gl";
 import { SEVERITY_COLOR, type WorldSignal } from "@/core/types";
+import type { WorldEvent } from "@/events/types";
+import { eventLabel } from "./world-event-detail";
+import type { CorrelatedEvent } from "@/correlations/types";
 import { Icon } from "./icon";
 const motionQuery = "(prefers-reduced-motion: reduce)";
 function subscribeMotion(callback: () => void) {
@@ -23,17 +27,30 @@ interface Country {
 }
 export default function Earth({
   signals,
+  events = [],
+  worldEvents = [],
+  selectedWorldEvent,
+  onWorldEvent,
+  selectedEvent,
+  onEvent,
   selected,
   country,
   onSelect,
   onCountry,
 }: {
   signals: WorldSignal[];
+  events?: CorrelatedEvent[];
+  worldEvents?: WorldEvent[];
+  selectedWorldEvent?: WorldEvent | null;
+  onWorldEvent?: (event: WorldEvent) => void;
+  selectedEvent?: CorrelatedEvent | null;
+  onEvent?: (event: CorrelatedEvent) => void;
   selected: WorldSignal | null;
   country: string | null;
   onSelect: (s: WorldSignal) => void;
   onCountry: (name: string) => void;
 }) {
+  const { t, countryName, locale } = useI18n();
   const labelSignals = useMemo(() => {
     if (signals.length <= 14) return signals;
     const countries = new Set<string>();
@@ -81,12 +98,16 @@ export default function Earth({
     };
   }, []);
   useEffect(() => {
-    if (!ready || !selected) return;
+    if (!ready || (!selected && !selectedEvent && !selectedWorldEvent)) return;
+    const focus =
+      selectedWorldEvent?.location ??
+      selectedEvent?.geographicScope ??
+      selected!;
     globe.current?.pointOfView(
-      { lat: selected.latitude, lng: selected.longitude, altitude: 1.85 },
+      { lat: focus.latitude, lng: focus.longitude, altitude: 1.85 },
       reducedMotion ? 0 : 1100,
     );
-  }, [ready, selected, reducedMotion]);
+  }, [ready, selected, selectedEvent, selectedWorldEvent, reducedMotion]);
   useEffect(() => {
     if (!ready || !globe.current) return;
     globe.current.controls().autoRotate = rotating && !reducedMotion;
@@ -144,14 +165,59 @@ export default function Earth({
         }
         polygonSideColor={() => "rgba(0,0,0,0)"}
         polygonStrokeColor={() => "#345558"}
-        polygonLabel={(d) => (d as Country).properties.ADMIN}
+        polygonLabel={(d) => countryName((d as Country).properties.ADMIN)}
         onPolygonClick={(d) => onCountry((d as Country).properties.ADMIN)}
+        htmlElementsData={[...events, ...worldEvents]}
+        htmlLat={(d) =>
+          ("location" in d
+            ? (d as WorldEvent).location
+            : (d as CorrelatedEvent).geographicScope
+          ).latitude
+        }
+        htmlLng={(d) =>
+          ("location" in d
+            ? (d as WorldEvent).location
+            : (d as CorrelatedEvent).geographicScope
+          ).longitude
+        }
+        htmlAltitude={0.06}
+        htmlElement={(d) => {
+          if ("location" in d) {
+            const event = d as WorldEvent;
+            const button = document.createElement("button");
+            button.className = "world-event-marker";
+            button.textContent = "◇";
+            button.style.color =
+              event.severity === "info"
+                ? "#7cb6ff"
+                : SEVERITY_COLOR[event.severity];
+            button.setAttribute(
+              "aria-label",
+              `${eventLabel(event, locale)}: ${event.title}`,
+            );
+            button.onclick = () => onWorldEvent?.(event);
+            return button;
+          }
+          const event = d as CorrelatedEvent;
+          const button = document.createElement("button");
+          button.className = "correlation-marker";
+          button.textContent = "◎";
+          button.setAttribute(
+            "aria-label",
+            `${t("Multi-signal event")}: ${countryName(event.geographicScope.country ?? "")}`,
+          );
+          button.onclick = () => onEvent?.(event);
+          return button;
+        }}
         pointsData={signals}
         pointLat="latitude"
         pointLng="longitude"
         pointAltitude={0.008}
         pointRadius={(d) =>
-          (d as WorldSignal).id === selected?.id ? 0.7 : 0.45
+          (d as WorldSignal).id === selected?.id ||
+          selectedEvent?.signalIds.includes((d as WorldSignal).id)
+            ? 0.9
+            : 0.45
         }
         pointColor={(d) => SEVERITY_COLOR[(d as WorldSignal).severity]}
         pointLabel={(d) =>
@@ -173,7 +239,7 @@ export default function Earth({
         labelAltitude={0.035}
         labelText={(d) =>
           (d as WorldSignal).country === "United States of America"
-            ? "UNITED STATES"
+            ? t("UNITED STATES")
             : (d as WorldSignal).country.toUpperCase()
         }
         labelSize={0.9}
@@ -187,24 +253,24 @@ export default function Earth({
       {!ready && (
         <div className="earth-loading">
           <span className="loading-orbit" />
-          INITIALIZING EARTH
+          {t("INITIALIZING EARTH")}
         </div>
       )}
       {failed && (
         <p className="map-warning">
-          Country boundaries unavailable. Explore signals in the feed.
+          {t("Country boundaries unavailable. Explore signals in the feed.")}
         </p>
       )}
       <div className="globe-controls">
-        <button aria-label="Zoom in" onClick={() => zoom(0.8)}>
+        <button aria-label={t("Zoom in")} onClick={() => zoom(0.8)}>
           <Icon name="plus" />
         </button>
-        <button aria-label="Zoom out" onClick={() => zoom(1.25)}>
+        <button aria-label={t("Zoom out")} onClick={() => zoom(1.25)}>
           <Icon name="minus" />
         </button>
         <span />
         <button
-          aria-label="Reset globe view"
+          aria-label={t("Reset globe view")}
           onClick={() =>
             globe.current?.pointOfView(
               { lat: 23, lng: 43, altitude: 2.05 },
@@ -215,7 +281,7 @@ export default function Earth({
           <Icon name="target" />
         </button>
         <button
-          aria-label={rotating ? "Pause globe rotation" : "Rotate globe"}
+          aria-label={rotating ? t("Pause globe rotation") : t("Rotate globe")}
           aria-pressed={rotating}
           disabled={reducedMotion}
           onClick={() => setRotating((r) => !r)}

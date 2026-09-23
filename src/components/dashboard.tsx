@@ -1,4 +1,6 @@
 "use client";
+import { signalTitle } from "@/i18n/signals";
+import { useI18n, LanguageSwitch } from "@/i18n/context";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
@@ -17,15 +19,21 @@ import {
   type WorldSignal,
 } from "@/core/types";
 import { Icon } from "./icon";
+import type { WorldEvent } from "@/events/types";
+import { WorldEventDetail, eventLabel } from "./world-event-detail";
+import { CorrelationDetail } from "./correlation-detail";
 import { SignalDetail } from "./signal-detail";
 const Earth = dynamic(() => import("./earth"), {
   ssr: false,
-  loading: () => (
-    <div className="earth-loading">
-      <span className="loading-orbit" />
-      LOADING EARTH
-    </div>
-  ),
+  loading: function LoadingEarth() {
+    const { t } = useI18n();
+    return (
+      <div className="earth-loading">
+        <span className="loading-orbit" />
+        {t("LOADING EARTH")}
+      </div>
+    );
+  },
 });
 class GlobeBoundary extends Component<
   { children: ReactNode },
@@ -36,16 +44,18 @@ class GlobeBoundary extends Component<
     return { failed: true };
   }
   render() {
-    return this.state.failed ? (
-      <div className="earth-loading">
-        <Icon name="internet" size={64} />
-        <p>3D view unavailable on this device.</p>
-        <span>All signals and evidence remain available in the feed.</span>
-      </div>
-    ) : (
-      this.props.children
-    );
+    return this.state.failed ? <GlobeFailure /> : this.props.children;
   }
+}
+function GlobeFailure() {
+  const { t } = useI18n();
+  return (
+    <div className="earth-loading">
+      <Icon name="internet" size={64} />
+      <p>{t("3D view unavailable on this device.")}</p>
+      <span>{t("All signals and evidence remain available in the feed.")}</span>
+    </div>
+  );
 }
 const periods = [
   { label: "1H", hours: 1 },
@@ -54,23 +64,66 @@ const periods = [
   { label: "7D", hours: 168 },
   { label: "30D", hours: 720 },
 ];
-const shortCountry = (s: string) =>
-  s === "United States of America" ? "United States" : s;
+
 export default function Dashboard({
   snapshot: initialSnapshot,
+  initialEvents = [],
+  initialEventsAvailable = false,
 }: {
   snapshot: SignalSnapshot;
+  initialEvents?: WorldEvent[];
+  initialEventsAvailable?: boolean;
 }) {
+  const { t, locale, countryName } = useI18n();
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const demo = snapshot.mode === "demo";
-  const [types, setTypes] = useState<SignalType[]>(
-    LAYERS.filter(
-      (l) => demo || l.id === "earthquake" || l.id === "wildfire",
-    ).map((l) => l.id),
+  const [view, setView] = useState<"signals" | "events">("signals");
+  const [worldEvents, setWorldEvents] = useState(initialEvents);
+  const [eventsAvailable, setEventsAvailable] = useState(
+    initialEventsAvailable,
   );
+  const [eventCategory, setEventCategory] = useState<string | null>(null);
+  const [worldEventId, setWorldEventId] = useState<string | null>(null);
+  const eventCategories = [
+    ["natural_hazard", "Natural hazards", "Risques naturels"],
+    ["climate", "Weather & climate", "Météo et climat"],
+    ["infrastructure", "Networks", "Réseaux"],
+    ["environment", "Environment", "Environnement"],
+    ["mobility", "Mobility", "Mobilité"],
+    ["earth_observation", "Earth observation", "Observation terrestre"],
+  ];
+  useEffect(() => {
+    if (demo) return;
+    const abort = new AbortController();
+    const refresh = async () => {
+      try {
+        const r = await fetch("/api/events?status=active&limit=500", {
+          signal: abort.signal,
+          cache: "no-store",
+        });
+        if (!r.ok) throw Error();
+        const data = await r.json();
+        const events = Array.isArray(data) ? data : data.events;
+        if (!Array.isArray(events)) throw Error();
+        setWorldEvents(events);
+        setEventsAvailable(true);
+      } catch {
+        if (!abort.signal.aborted) setEventsAvailable(false);
+      }
+    };
+    void refresh();
+    const timer = setInterval(refresh, 60000);
+    return () => {
+      abort.abort();
+      clearInterval(timer);
+    };
+  }, [demo]);
+
+  const [types, setTypes] = useState<SignalType[]>(LAYERS.map((l) => l.id));
   const [hours, setHours] = useState(24);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [country, setCountry] = useState<string | null>(null);
   const [significantOnly, setSignificantOnly] = useState(false);
   const [refreshVersion, setRefreshVersion] = useState(0);
@@ -102,6 +155,42 @@ export default function Dashboard({
       }),
     [snapshot.signals, hours, asOf],
   );
+  const visibleWorldEvents = worldEvents.filter(
+    (event) =>
+      (!eventCategory || event.category === eventCategory) &&
+      (!significantOnly || event.severity === "significant") &&
+      Date.parse(event.updatedAt) >= Date.parse(asOf) - hours * 3600000 &&
+      Date.parse(event.updatedAt) <= Date.parse(asOf) &&
+      (!query ||
+        `${event.title} ${eventLabel(event, locale)} ${event.source.name}`
+          .toLowerCase()
+          .includes(query.toLowerCase())),
+  );
+  const selectedWorldEvent =
+    visibleWorldEvents.find((e) => e.id === worldEventId) ?? null;
+  const visibleEvents = (snapshot.correlations ?? []).filter(
+    (event) =>
+      event.signalIds.every((id) =>
+        visible.some((signal) => signal.id === id),
+      ) && Date.parse(event.windowEnd) <= Date.parse(asOf),
+  );
+  const selectedEvent =
+    visibleEvents.find((event) => event.id === selectedEventId) ?? null;
+  const memberIds = new Set(visibleEvents.flatMap((event) => event.signalIds));
+  const feedItems = [
+    ...visibleEvents,
+    ...visible.filter((signal) => !memberIds.has(signal.id)),
+  ].sort((a, b) => {
+    const rank = (item: typeof a) =>
+      ({ notable: 1, elevated: 2, significant: 3 })[item.severity] +
+      item.confidence * 0.3 +
+      ("signalIds" in item ? 0.15 : 0);
+    return (
+      rank(b) - rank(a) ||
+      Date.parse("windowEnd" in b ? b.windowEnd : b.timestamp) -
+        Date.parse("windowEnd" in a ? a.windowEnd : a.timestamp)
+    );
+  });
   const selected = visible.find((s) => s.id === selectedId) ?? null;
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -114,6 +203,8 @@ export default function Dashboard({
       }
       if (e.key === "Escape") {
         setSelectedId(null);
+        setSelectedEventId(null);
+        setWorldEventId(null);
         search.current?.blur();
       }
     };
@@ -173,16 +264,17 @@ export default function Dashboard({
     };
   }, [demo, hours, types, query, country, significantOnly, refreshVersion]);
   const statusLabel = demo
-    ? "DEMO MODE"
+    ? t("DEMO MODE")
     : snapshot.status === "live"
-      ? "LIVE DATA"
+      ? t("LIVE DATA")
       : snapshot.status === "partial"
-        ? "PARTIAL DATA"
+        ? t("PARTIAL DATA")
         : snapshot.status === "unavailable"
-          ? "DATA UNAVAILABLE"
-          : "DATA DELAYED";
+          ? t("DATA UNAVAILABLE")
+          : t("DATA DELAYED");
   const isPlaying = playing && replay < 100;
   const select = (signal: WorldSignal) => {
+    setSelectedEventId(null);
     setSelectedId(signal.id);
     if (window.matchMedia("(max-width: 760px)").matches)
       requestAnimationFrame(() => {
@@ -196,11 +288,10 @@ export default function Dashboard({
       });
   };
   const reset = () => {
-    setTypes(
-      LAYERS.filter(
-        (l) => demo || l.id === "earthquake" || l.id === "wildfire",
-      ).map((l) => l.id),
-    );
+    setWorldEventId(null);
+    setEventCategory(null);
+    setSelectedEventId(null);
+    setTypes(LAYERS.map((l) => l.id));
     setQuery("");
     setCountry(null);
     setSignificantOnly(false);
@@ -214,21 +305,22 @@ export default function Dashboard({
   return (
     <main className="app-shell">
       <header className="topbar">
-        <Link className="brand" href="/" aria-label="World Signal home">
+        <Link className="brand" href="/" aria-label={t("World Signal home")}>
           <span className="brand-symbol">
             <Icon name="internet" size={25} />
           </span>
           <span>
             WORLD<span className="brand-light"> SIGNAL</span>
-            <small>PLANETARY INTELLIGENCE</small>
+            <small>{t("PLANETARY INTELLIGENCE")}</small>
           </span>
         </Link>
         <div className="header-middle">
           <span className="status-dot" />
-          EARTH OBSERVATORY <span className="header-divider">/</span>{" "}
-          <span>01</span>
+          {t("EARTH OBSERVATORY")}
+          <span className="header-divider">/</span> <span>01</span>
         </div>
         <div className="header-actions">
+          <LanguageSwitch />
           <button
             className={`demo-badge ${!demo && snapshot.status === "live" ? "live-badge" : ""}`}
             onClick={() => dialog.current?.showModal()}
@@ -239,16 +331,16 @@ export default function Dashboard({
           </button>
           <Link
             className="mode-switch"
-            href={demo ? "/?mode=live" : "/?mode=demo"}
+            href={`/?mode=${demo ? "live" : "demo"}&lang=${locale}`}
           >
-            {demo ? "Live view" : "Demo"}
+            {demo ? t("Live view") : "Demo"}
           </Link>
           <span className="header-time">
             {new Date(asOf).toISOString().slice(11, 16)} <small>UTC</small>
           </span>
           <button
             className="icon-button help-button"
-            aria-label="About the data"
+            aria-label={t("About the data")}
             onClick={() => dialog.current?.showModal()}
           >
             <Icon name="info" />
@@ -256,74 +348,89 @@ export default function Dashboard({
         </div>
       </header>
       <div className="workspace">
-        <aside className="layer-sidebar" aria-label="Data layers">
+        <aside className="layer-sidebar" aria-label={t("Data layers")}>
           <div className="sidebar-title">
             <Icon name="layers" size={15} />
-            <span>DATA LAYERS</span>
-            <span className="tiny-count">{demo ? "04" : "02"}</span>
+            <span>{t("DATA LAYERS")}</span>
+            <span className="tiny-count">{t("04")}</span>
           </div>
-          <div className="layer-list">
-            {LAYERS.map((layer) => {
-              const active = types.includes(layer.id);
-              return (
+          {view === "events" ? (
+            <div className="layer-list event-category-list">
+              <button
+                className={`layer-button ${eventCategory === null ? "active" : ""}`}
+                onClick={() => setEventCategory(null)}
+              >
+                {locale === "fr" ? "Tous les événements" : "All events"}
+              </button>
+              {eventCategories.map(([id, en, fr]) => (
                 <button
-                  key={layer.id}
-                  aria-label={layer.name}
-                  disabled={
-                    !demo &&
-                    (layer.id === "internet" || layer.id === "aviation")
-                  }
-                  title={
-                    !demo &&
-                    (layer.id === "internet" || layer.id === "aviation")
-                      ? "Not connected in this release"
-                      : layer.description
-                  }
-                  className={`layer-button ${active ? "active" : ""}`}
-                  aria-pressed={active}
+                  className={`layer-button ${eventCategory === id ? "active" : ""}`}
+                  key={id}
+                  aria-label={locale === "fr" ? fr : en}
+                  aria-pressed={eventCategory === id}
                   onClick={() =>
-                    setTypes((prev) =>
-                      active
-                        ? prev.filter((t) => t !== layer.id)
-                        : [...prev, layer.id],
-                    )
+                    setEventCategory(eventCategory === id ? null : id)
                   }
                 >
-                  <span className="layer-icon" style={{ color: layer.color }}>
-                    <Icon name={layer.id} size={18} />
-                  </span>
                   <span className="layer-name">
-                    {layer.name}
-                    <small>
-                      {!demo &&
-                      (layer.id === "internet" || layer.id === "aviation")
-                        ? "Not connected"
-                        : layer.description}
-                    </small>
+                    {locale === "fr" ? fr : en}
                   </span>
                   <span className="layer-count">
-                    {inWindow
-                      .filter((s) => s.type === layer.id)
-                      .length.toString()
-                      .padStart(2, "0")}
-                  </span>
-                  <span className="checkbox">
-                    {active && <Icon name="check" size={10} />}
+                    {worldEvents.filter((e) => e.category === id).length}
                   </span>
                 </button>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="layer-list">
+              {LAYERS.map((layer) => {
+                const active = types.includes(layer.id);
+                return (
+                  <button
+                    key={layer.id}
+                    aria-label={t(layer.name)}
+                    title={t(layer.description)}
+                    className={`layer-button ${active ? "active" : ""}`}
+                    aria-pressed={active}
+                    onClick={() =>
+                      setTypes((prev) =>
+                        active
+                          ? prev.filter((t) => t !== layer.id)
+                          : [...prev, layer.id],
+                      )
+                    }
+                  >
+                    <span className="layer-icon" style={{ color: layer.color }}>
+                      <Icon name={layer.id} size={18} />
+                    </span>
+                    <span className="layer-name">
+                      {layer.name}
+                      <small>{layer.description}</small>
+                    </span>
+                    <span className="layer-count">
+                      {inWindow
+                        .filter((s) => s.type === layer.id)
+                        .length.toString()
+                        .padStart(2, "0")}
+                    </span>
+                    <span className="checkbox">
+                      {active && <Icon name="check" size={10} />}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <div className="sidebar-divider" />
-          <div className="sidebar-label">SIGNAL SEVERITY</div>
+          <div className="sidebar-label">{t("SIGNAL SEVERITY")}</div>
           <button
-            aria-label="Significant only"
+            aria-label={t("Significant only")}
             className={`severity-filter ${significantOnly ? "selected" : ""}`}
             aria-pressed={significantOnly}
             onClick={() => setSignificantOnly((v) => !v)}
           >
             <i className="severity-dot significant" />
-            <span>Significant only</span>
+            <span>{t("Significant only")}</span>
             <span className="checkbox">
               {significantOnly && <Icon name="check" size={10} />}
             </span>
@@ -331,11 +438,11 @@ export default function Dashboard({
           <div className="severity-legend">
             <span>
               <i className="severity-dot elevated" />
-              Elevated
+              {t("Elevated")}
             </span>
             <span>
               <i className="severity-dot notable" />
-              Notable
+              {t("Notable")}
             </span>
           </div>
           <div className="sidebar-bottom">
@@ -343,45 +450,53 @@ export default function Dashboard({
               <Icon name="target" size={24} />
             </div>
             <h3>
-              A changing world.
-              <br />A clearer picture.
+              {t("A changing world.")}
+              <br />
+              {t("A clearer picture.")}
             </h3>
             <p>
-              Observed activity.
+              {t("Observed activity.")}
               <br />
-              Meaningful deviations.
+              {t("Meaningful deviations.")}
               <br />
-              Evidence that explains.
+              {t("Evidence that explains.")}
             </p>
             <button onClick={() => dialog.current?.showModal()}>
-              How signals work
+              {t("How signals work")}
               <Icon name="arrow" size={14} />
             </button>
             <div className="source-status">
               <span className="status-dot" />
               {demo
-                ? "4 simulated data layers"
-                : `${snapshot.providers.filter((p) => p.status === "healthy").length}/2 sources current`}
+                ? t("4 simulated data layers")
+                : `${snapshot.providers.filter((p) => p.status === "healthy").length}/${snapshot.providers.length} sources current`}
             </div>
           </div>
         </aside>
-        <section className="observatory" aria-label="Global observatory">
+        <section className="observatory" aria-label={t("Global observatory")}>
           <div className="globe-heading">
             <div className="eyebrow">
               <span className="status-dot" />
-              GLOBAL PULSE{" "}
-              <span>{demo ? "/ SIMULATION" : "/ OBSERVED DATA"}</span>
+              {t("GLOBAL PULSE")}{" "}
+              <span>{demo ? t("/ SIMULATION") : t("/ OBSERVED DATA")}</span>
             </div>
-            <h1>What changed?</h1>
+            <h1>{t("What changed?")}</h1>
             <p>
-              <strong>{visible.length}</strong> unusual signals.{" "}
-              <span>One connected planet.</span>
+              <strong>
+                {view === "events" ? visibleWorldEvents.length : visible.length}
+              </strong>{" "}
+              {view === "events"
+                ? locale === "fr"
+                  ? "événements signalés."
+                  : "reported events."
+                : t("unusual signals.")}{" "}
+              <span>{t("One connected planet.")}</span>
             </p>
           </div>
           <div className="map-meta">
             <span>
               {new Date(asOf)
-                .toLocaleDateString("en-GB", {
+                .toLocaleDateString(locale === "fr" ? "fr-FR" : "en-GB", {
                   timeZone: "UTC",
                   day: "2-digit",
                   month: "short",
@@ -392,18 +507,28 @@ export default function Dashboard({
             <span>
               {demo
                 ? replay === 100
-                  ? "DEMO SNAPSHOT"
-                  : "HISTORICAL REPLAY"
+                  ? t("DEMO SNAPSHOT")
+                  : t("HISTORICAL REPLAY")
                 : statusLabel}
             </span>
           </div>
           <GlobeBoundary>
             <Earth
-              signals={visible}
+              signals={view === "signals" ? visible : []}
+              worldEvents={view === "events" ? visibleWorldEvents : []}
+              selectedWorldEvent={selectedWorldEvent}
+              onWorldEvent={(event) => setWorldEventId(event.id)}
               selected={selected}
-              country={country}
+              events={view === "signals" ? visibleEvents : []}
+              selectedEvent={selectedEvent}
+              onEvent={(event) => {
+                setSelectedId(null);
+                setSelectedEventId(event.id);
+              }}
+              country={view === "signals" ? country : null}
               onSelect={select}
               onCountry={(name) => {
+                if (view !== "signals") return;
                 setCountry(name);
                 setSelectedId(null);
               }}
@@ -413,26 +538,28 @@ export default function Dashboard({
             className="map-search"
             onSubmit={(e) => {
               e.preventDefault();
-              if (visible[0]) select(visible[0]);
+              if (view === "events")
+                setWorldEventId(visibleWorldEvents[0]?.id ?? null);
+              else if (visible[0]) select(visible[0]);
             }}
           >
             <Icon name="search" size={17} />
             <input
               ref={search}
               aria-label={
-                demo ? "Search demo signals" : "Search observed signals"
+                demo ? t("Search demo signals") : t("Search observed signals")
               }
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value);
                 setCountry(null);
               }}
-              placeholder="Find a place or signal…"
+              placeholder={t("Find a place or signal…")}
             />
             {query ? (
               <button
                 type="button"
-                aria-label="Clear search"
+                aria-label={t("Clear search")}
                 onClick={() => setQuery("")}
               >
                 <Icon name="close" size={15} />
@@ -441,32 +568,32 @@ export default function Dashboard({
               <kbd>/</kbd>
             )}
           </form>
-          {country && (
+          {country && view === "signals" && (
             <div className="country-summary">
               <div>
-                <span>REGION FOCUS</span>
+                <span>{t("REGION FOCUS")}</span>
                 <button
                   className="icon-button"
-                  aria-label="Clear country selection"
+                  aria-label={t("Clear country selection")}
                   onClick={() => setCountry(null)}
                 >
                   <Icon name="close" size={15} />
                 </button>
               </div>
-              <h3>{shortCountry(country)}</h3>
+              <h3>{countryName(country)}</h3>
               {LAYERS.map((l) => {
                 const count = inWindow.filter(
                   (s) => s.country === country && s.type === l.id,
                 ).length;
                 return (
                   <p key={l.id}>
-                    <span>{l.name}</span>
+                    <span>{t(l.name)}</span>
                     <b>
                       {count
-                        ? `${count} ${demo ? "demo " : ""}signal${count > 1 ? "s" : ""}`
+                        ? `${count} ${demo ? t("demo ") : ""}signal${count > 1 ? "s" : ""}`
                         : demo
-                          ? "No demo coverage"
-                          : "No matching signal / check coverage"}
+                          ? t("No demo coverage")
+                          : t("No matching signal / check coverage")}
                     </b>
                   </p>
                 );
@@ -475,16 +602,140 @@ export default function Dashboard({
           )}
           <div className="globe-caption">
             <span>
-              <i /> {significantCount} significant
+              <i />{" "}
+              {view === "signals"
+                ? significantCount
+                : visibleWorldEvents.filter((e) => e.severity === "significant")
+                    .length}{" "}
+              {t("significant")}
+            </span>
+            <span className="activity-counts" hidden={view !== "signals"}>
+              {visible.filter((s) => s.severity === "notable").length}{" "}
+              {t("notable ·")}{" "}
+              {visible.filter((s) => s.severity === "elevated").length}{" "}
+              {t("elevated ·")} {visibleEvents.length} {t("multi")}
             </span>
             <span className="globe-instructions">
-              DRAG TO EXPLORE <span>·</span> SCROLL TO ZOOM
+              {t("DRAG TO EXPLORE")}
+              <span>·</span>
+              {t("SCROLL TO ZOOM")}
             </span>
             <span className="coordinate-label">3D / WGS 84</span>
           </div>
         </section>
-        <aside className="feed-panel" aria-label="Signal feed">
-          {selected ? (
+        <aside className="feed-panel" aria-label={t("Signal feed")}>
+          {!demo && (
+            <div
+              className="feed-tabs"
+              role="tablist"
+              aria-label={locale === "fr" ? "Type de données" : "Data view"}
+            >
+              <button
+                role="tab"
+                aria-selected={view === "signals"}
+                onClick={() => {
+                  setView("signals");
+                  setCountry(null);
+                }}
+              >
+                {locale === "fr" ? "Signaux inhabituels" : "Unusual signals"}
+              </button>
+              <button
+                role="tab"
+                aria-selected={view === "events"}
+                onClick={() => {
+                  setView("events");
+                  setCountry(null);
+                  setSelectedId(null);
+                }}
+              >
+                {locale === "fr" ? "Événements signalés" : "Reported events"}
+              </button>
+            </div>
+          )}
+          {view === "events" ? (
+            selectedWorldEvent ? (
+              <WorldEventDetail
+                event={selectedWorldEvent}
+                onClose={() => setWorldEventId(null)}
+              />
+            ) : (
+              <>
+                <div className="panel-heading">
+                  <span>
+                    {locale === "fr"
+                      ? "ÉVÉNEMENTS SIGNALÉS"
+                      : "REPORTED EVENTS"}
+                  </span>
+                  <span>{visibleWorldEvents.length}</span>
+                </div>
+                <div className="feed-subtitle">
+                  {locale === "fr"
+                    ? "Mis à jour pendant la période sélectionnée"
+                    : "Updated within the selected time window"}
+                </div>
+                <div className="signal-list">
+                  {!eventsAvailable && (
+                    <p className="context-note" role="status">
+                      {locale === "fr"
+                        ? "Actualisation indisponible. Les dernières données sont conservées."
+                        : "Refresh unavailable. Showing the last available data."}
+                    </p>
+                  )}
+                  {visibleWorldEvents.map((event) => (
+                    <button
+                      className={`signal-card ${event.severity}`}
+                      key={event.id}
+                      onClick={() => setWorldEventId(event.id)}
+                    >
+                      <div className="signal-card-top">
+                        <span>◇ {eventLabel(event, locale)}</span>
+                        <time>
+                          {new Date(event.updatedAt)
+                            .toISOString()
+                            .slice(11, 16)}
+                        </time>
+                      </div>
+                      <h3>{event.title}</h3>
+                      <div className="signal-card-bottom">
+                        <span>{event.source.name}</span>
+                        <small>
+                          {event.location.latitude.toFixed(1)}°,{" "}
+                          {event.location.longitude.toFixed(1)}°
+                        </small>
+                      </div>
+                    </button>
+                  ))}
+                  {!visibleWorldEvents.length && (
+                    <div className="empty-state">
+                      <h3>
+                        {locale === "fr"
+                          ? "Aucun événement dans cette période"
+                          : "No events in this time window"}
+                      </h3>
+                      <p>
+                        {locale === "fr"
+                          ? "Élargissez la période ou changez de catégorie. L’absence de résultat ne prouve pas l’absence d’activité."
+                          : "Widen the period or change category. No result does not prove absence of activity."}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <div className="feed-footer">
+                  {locale === "fr"
+                    ? "Rapports de sources et seuils documentés · pas un indice de danger"
+                    : "Source reports and documented thresholds · not a danger index"}
+                </div>
+              </>
+            )
+          ) : selectedEvent ? (
+            <CorrelationDetail
+              event={selectedEvent}
+              signals={snapshot.signals}
+              onClose={() => setSelectedEventId(null)}
+              onSelect={select}
+            />
+          ) : selected ? (
             <SignalDetail
               key={selected.id}
               signal={selected}
@@ -495,7 +746,7 @@ export default function Dashboard({
               <div className="panel-heading">
                 <span>
                   <i className="status-dot" />
-                  SIGNAL FEED
+                  {t("SIGNAL FEED")}
                 </span>
                 <span className="feed-count">
                   {visible.length.toString().padStart(2, "0")}
@@ -503,60 +754,101 @@ export default function Dashboard({
               </div>
               <div className="feed-subtitle">
                 <span>
-                  {country ? shortCountry(country) : "Around the world"}
+                  {country ? countryName(country) : t("Around the world")}
                 </span>
                 <span>
-                  LATEST FIRST
+                  {t("PRIORITY & RECENCY")}
                   <Icon name="arrow" size={11} />
                 </span>
               </div>
               <div className="signal-list">
-                {visible.map((signal) => (
-                  <button
-                    key={signal.id}
-                    className={`signal-card ${signal.severity}`}
-                    onClick={() => select(signal)}
-                    aria-label={`View ${signal.country} signal: ${signal.title}`}
-                  >
-                    <div className="signal-card-top">
-                      <span>
-                        <Icon name={signal.type} size={14} />
-                        {shortCountry(signal.country)}
-                      </span>
-                      <time dateTime={signal.timestamp}>
-                        {new Date(signal.timestamp).toISOString().slice(11, 16)}
-                      </time>
-                    </div>
-                    <h3>
-                      {signal.title}
-                      {signal.status === "resolved" ? " · resolved" : ""}
-                    </h3>
-                    <div className="signal-card-bottom">
-                      <span className={`severity ${signal.severity}`}>
-                        <i />
-                        {signal.severity}
-                      </span>
-                      <strong>
-                        {deviationLabel(signal)}
+                {feedItems.map((signal) =>
+                  "signalIds" in signal ? (
+                    <button
+                      key={signal.id}
+                      className={`signal-card multi-signal-card ${signal.severity}`}
+                      onClick={() => {
+                        setSelectedId(null);
+                        setSelectedEventId(signal.id);
+                      }}
+                      aria-label={`View multi-signal event: ${signal.geographicScope.country}`}
+                    >
+                      <div className="signal-card-top">
+                        <span>{t("◎ MULTIPLE SIGNALS")}</span>
+                        <span>
+                          {signal.windowHours}
+                          {t("h")}
+                        </span>
+                      </div>
+                      <h3>
+                        {countryName(
+                          signal.geographicScope.country ??
+                            "Offshore / unassigned",
+                        )}
+                      </h3>
+                      <p>
+                        {signal.signalTypes.map((type) => t(type)).join(" + ")}
+                      </p>
+                      <div className="signal-card-bottom">
+                        <span className={`severity ${signal.severity}`}>
+                          {t(signal.severity)}
+                        </span>
                         <small>
-                          {signal.kind === "earthquake-event"
-                            ? "observed"
-                            : "vs baseline"}
+                          {signal.signalTypes.length}
+                          {t("independent systems")}
                         </small>
-                      </strong>
-                    </div>
-                  </button>
-                ))}
+                      </div>
+                    </button>
+                  ) : (
+                    <button
+                      key={signal.id}
+                      className={`signal-card ${signal.severity}`}
+                      onClick={() => select(signal)}
+                      aria-label={`View ${signal.country} signal: ${signalTitle(signal, locale)}`}
+                    >
+                      <div className="signal-card-top">
+                        <span>
+                          <Icon name={signal.type} size={14} />
+                          {countryName(signal.country)}
+                        </span>
+                        <time dateTime={signal.timestamp}>
+                          {new Date(signal.timestamp)
+                            .toISOString()
+                            .slice(11, 16)}
+                        </time>
+                      </div>
+                      <h3>
+                        {signalTitle(signal, locale)}
+                        {signal.status === "resolved" ? t(" · resolved") : ""}
+                      </h3>
+                      <div className="signal-card-bottom">
+                        <span className={`severity ${signal.severity}`}>
+                          <i />
+                          {t(signal.severity)}
+                        </span>
+                        <strong>
+                          {deviationLabel(signal)}
+                          <small>
+                            {signal.kind === "earthquake-event"
+                              ? t("observed")
+                              : t("vs baseline")}
+                          </small>
+                        </strong>
+                      </div>
+                    </button>
+                  ),
+                )}
                 {!visible.length && (
                   <div className="empty-state">
                     <Icon name="target" size={35} />
-                    <h3>No matching signals</h3>
+                    <h3>{t("No matching signals")}</h3>
                     <p>
-                      Try another place, enable a layer or widen the time
-                      window. No result does not mean normal activity.
+                      {t(
+                        "Try another place, enable a layer or widen the time window. No result does not mean normal activity.",
+                      )}
                     </p>
                     <button onClick={reset}>
-                      Reset filters
+                      {t("Reset filters")}
                       <Icon name="arrow" size={15} />
                     </button>
                   </div>
@@ -566,20 +858,22 @@ export default function Dashboard({
                 <Icon name="info" size={14} />
                 <span>
                   {demo
-                    ? "Synthetic scenarios. Not live observations."
+                    ? t("Synthetic scenarios. Not live observations.")
                     : snapshot.truncated
                       ? `Showing ${snapshot.signals.length} of ${snapshot.total} signals. Refine filters.`
-                      : "Observed data · selection rules, not danger ratings."}
+                      : t(
+                          "Observed data · selection rules, not danger ratings.",
+                        )}
                 </span>
               </div>
             </>
           )}
         </aside>
       </div>
-      <section className="timeline" aria-label="Time navigation">
+      <section className="timeline" aria-label={t("Time navigation")}>
         <div className="timeline-label">
           <Icon name="layers" size={16} />
-          <span>TIME WINDOW</span>
+          <span>{t("TIME WINDOW")}</span>
         </div>
         <div className="time-options">
           {periods.map((p) => (
@@ -603,10 +897,12 @@ export default function Dashboard({
           disabled={!demo}
           title={
             !demo
-              ? "Live history uses time-window filters. Exact historical replay is not available."
-              : "Replay demo scenarios"
+              ? t(
+                  "Live history uses time-window filters. Exact historical replay is not available.",
+                )
+              : t("Replay demo scenarios")
           }
-          aria-label={isPlaying ? "Pause replay" : "Play demo replay"}
+          aria-label={isPlaying ? t("Pause replay") : t("Play demo replay")}
           onClick={() => {
             if (replay === 100) {
               setReplay(0);
@@ -621,7 +917,7 @@ export default function Dashboard({
             <span>
               {new Date(
                 Date.parse(snapshot.asOf) - hours * 3600000,
-              ).toLocaleString("en-GB", {
+              ).toLocaleString(locale === "fr" ? "fr-FR" : "en-GB", {
                 timeZone: "UTC",
                 day: "2-digit",
                 month: "short",
@@ -631,14 +927,17 @@ export default function Dashboard({
             </span>
             <span>
               {demo && replay === 100
-                ? "16 SEP · 21:43 UTC"
-                : new Date(asOf).toLocaleString("en-GB", {
-                    timeZone: "UTC",
-                    day: "2-digit",
-                    month: "short",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  }) + " UTC"}
+                ? t("16 SEP · 21:43 UTC")
+                : new Date(asOf).toLocaleString(
+                    locale === "fr" ? "fr-FR" : "en-GB",
+                    {
+                      timeZone: "UTC",
+                      day: "2-digit",
+                      month: "short",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    },
+                  ) + " UTC"}
             </span>
           </div>
           <input
@@ -647,7 +946,7 @@ export default function Dashboard({
             max="100"
             value={replay}
             aria-label={
-              demo ? "Demo replay position" : "Live snapshot position"
+              demo ? t("Demo replay position") : t("Live snapshot position")
             }
             disabled={!demo}
             onChange={(e) => {
@@ -665,21 +964,22 @@ export default function Dashboard({
           }}
         >
           <span className="status-dot" />
-          {demo ? "SNAPSHOT" : "CURRENT"}
+          {demo ? t("SNAPSHOT") : t("CURRENT")}
         </button>
       </section>
       <footer className="statusbar">
         <span>
           <span className="status-dot" />
-          {demo ? "DEMO ENVIRONMENT" : statusLabel}
+          {demo ? t("DEMO ENVIRONMENT") : statusLabel}
           <span className="statusbar-sep">/</span>
           {demo
-            ? "ALL VALUES ARE SYNTHETIC"
-            : "USGS + NASA FIRMS · NO SYNTHETIC OBSERVATIONS"}
+            ? t("ALL VALUES ARE SYNTHETIC")
+            : t("4 OBSERVABLE SYSTEMS · NO SYNTHETIC OBSERVATIONS")}
         </span>
         <span>
-          OBSERVE. COMPARE. UNDERSTAND.<span className="statusbar-sep">/</span>
-          V0.2
+          {t("OBSERVE. COMPARE. UNDERSTAND.")}
+          <span className="statusbar-sep">/</span>
+          V0.3
         </span>
       </footer>
       <dialog
@@ -690,10 +990,10 @@ export default function Dashboard({
         }}
       >
         <div className="panel-heading">
-          <span>THE SIGNAL, NOT THE NOISE</span>
+          <span>{t("THE SIGNAL, NOT THE NOISE")}</span>
           <button
             className="icon-button"
-            aria-label="Close about dialog"
+            aria-label={t("Close about dialog")}
             onClick={() => dialog.current?.close()}
           >
             <Icon name="close" />
@@ -702,104 +1002,134 @@ export default function Dashboard({
         <div className="about-content">
           <Icon name="internet" size={40} />
           <h2>
-            A window into a<br />
-            changing world.
+            {t("A window into a")}
+            <br />
+            {t("changing world.")}
           </h2>
           <p>
-            WORLD SIGNAL compares observed activity with a reference, highlights
-            unusual changes and puts the evidence within reach.
+            {t(
+              "WORLD SIGNAL compares observed activity with a reference, highlights unusual changes and puts the evidence within reach.",
+            )}
           </p>
           <div className="process-steps">
-            <span>01 Observe</span>
-            <span>02 Compare</span>
-            <span>03 Explain</span>
+            <span>{t("01 Observe")}</span>
+            <span>{t("02 Compare")}</span>
+            <span>{t("03 Explain")}</span>
           </div>
           {demo ? (
             <>
-              <h3>You are exploring a demonstration.</h3>
+              <h3>{t("You are exploring a demonstration.")}</h3>
               <p>
-                Every event, measurement and reference sample in demo mode is
-                synthetic. The fixed scenario ends on 16 September 2026 at 21:43
-                UTC. Switch to Live view to query observed USGS and NASA FIRMS
-                data; the modes never mix.
+                {t(
+                  "Every event, measurement and reference sample in demo mode is synthetic. The fixed scenario ends on 16 September 2026 at 21:43 UTC. Switch to Live view to query observed USGS and NASA FIRMS data; the modes never mix.",
+                )}
               </p>
               <p>
-                Demo severity uses count z-scores, detection ratios and traffic
-                deviations over synthetic 30-day references. No AI is generating
-                explanations.
+                {t(
+                  "Demo severity uses count z-scores, detection ratios and traffic deviations over synthetic 30-day references. No AI is generating explanations.",
+                )}
               </p>
             </>
           ) : (
             <>
-              <h3>Observed data and source health</h3>
+              <h3>{t("Observed data and source health")}</h3>
               <p>
-                Scheduled collection: approximately every{" "}
-                {snapshot.collectionCadenceMinutes ?? 5} minutes. Upstream
-                reporting can take longer; collection times below show actual
-                freshness.
+                {t("Scheduled collection: approximately every")}{" "}
+                {snapshot.collectionCadenceMinutes ?? 5}
+                {t(
+                  "minutes. Upstream reporting can take longer; collection times below show actual freshness.",
+                )}
               </p>
               <div className="provider-health">
                 {snapshot.providers.map((provider) => (
                   <div key={provider.id ?? provider.name}>
                     <strong>{provider.name}</strong>
                     <span className={`health-${provider.status}`}>
-                      {provider.status.toUpperCase()}
+                      {t(provider.status).toUpperCase()}
                     </span>
                     <p>
-                      Last successful collection:{" "}
+                      {t("Last successful collection:")}{" "}
                       {provider.lastSuccessAt
                         ? new Date(provider.lastSuccessAt).toLocaleString(
-                            "en-GB",
+                            locale === "fr" ? "fr-FR" : "en-GB",
                             { timeZone: "UTC" },
                           ) + " UTC"
-                        : "Not available"}
+                        : t("Not available")}
                     </p>
                     <p>
-                      Latest observation:{" "}
+                      {t("Latest observation:")}{" "}
                       {provider.latestObservationAt
                         ? new Date(provider.latestObservationAt).toLocaleString(
-                            "en-GB",
+                            locale === "fr" ? "fr-FR" : "en-GB",
                             { timeZone: "UTC" },
                           ) + " UTC"
-                        : "Not available"}
+                        : t("Not available")}
                     </p>
+                    {provider.scopes && (
+                      <p>
+                        {provider.scopes.fresh}/{provider.scopes.configured}
+                        {t("monitored areas with recent observations")}
+                      </p>
+                    )}
+                    {provider.historyDays !== undefined && (
+                      <p>
+                        {t("Stored history:")}
+                        {provider.historyDays.toFixed(1)}
+                        {t("days ·")}
+                        {provider.analysisState === "collecting_history"
+                          ? t("Collecting baseline")
+                          : t(
+                              "References available; eligibility varies by area",
+                            )}
+                      </p>
+                    )}
+                    {provider.recordsReceived !== undefined && (
+                      <p>
+                        {t("Received:")}
+                        {provider.recordsReceived}
+                        {t("· inserted:")}
+                        {provider.recordsInserted ?? 0}
+                        {t("· updated:")}
+                        {provider.recordsUpdated ?? 0}
+                      </p>
+                    )}
                     {provider.error && (
-                      <p>State: {provider.error.replaceAll("_", " ")}</p>
+                      <p>
+                        {t("State:")}
+                        {t(provider.error.replaceAll("_", " "))}
+                      </p>
                     )}
                   </div>
                 ))}
               </div>
               <p>
-                A current collection does not guarantee full satellite or
-                catalogue coverage. Provider failures never substitute demo
-                data. Internet and aviation are not connected.
+                {t(
+                  "A current collection does not guarantee full satellite or catalogue coverage. Provider failures never substitute demo data. Coverage and history vary by source. Aviation monitors selected regions; a missing observation never means zero traffic.",
+                )}
               </p>
-              <h3>Transparent by design</h3>
+              <h3>{t("Transparent by design")}</h3>
               <p>
-                Individual earthquakes cross documented magnitude, depth or
-                significance thresholds. Regional anomalies compare counts in
-                equal-length windows with stored historical observations. The
-                current window is excluded. Short fire references are labeled
-                provisional; missing history is never invented.
+                {t(
+                  "Individual earthquakes cross documented magnitude, depth or significance thresholds. Regional anomalies compare counts in equal-length windows with stored historical observations. The current window is excluded. Short fire references are labeled provisional; missing history is never invented.",
+                )}
               </p>
               <p>
-                Confidence is a documented data-quality indicator, not an
-                incident probability. Thermal detections are not individual
-                fires, and geographic cells are not incident perimeters. No AI
-                or causal analysis is used.
+                {t(
+                  "Confidence is a documented data-quality indicator, not an incident probability. Thermal detections are not individual fires, and geographic cells are not incident perimeters. No AI or causal analysis is used.",
+                )}
               </p>
             </>
           )}
           <p className="fineprint">
-            Country boundaries: Natural Earth, public domain; generalized
-            cartographic reference, not a statement on territorial status. Earth
-            imagery: three-globe example asset.
+            {t(
+              "Country boundaries: Natural Earth, public domain; generalized cartographic reference, not a statement on territorial status. Earth imagery: three-globe example asset.",
+            )}
           </p>
           <button
             className="primary-button"
             onClick={() => dialog.current?.close()}
           >
-            Explore the signals
+            {t("Explore the signals")}
             <Icon name="arrow" size={17} />
           </button>
         </div>

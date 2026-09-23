@@ -1,5 +1,8 @@
 import type { ContextProvider } from "../context/evidence";
-import { buildInvestigation, type Investigation } from "../context/investigation";
+import {
+  buildInvestigation,
+  type Investigation,
+} from "../context/investigation";
 import { GdacsContextProvider } from "../context/providers/gdacs";
 import { GdeltContextProvider } from "../context/providers/gdelt";
 import type { CorrelatedEvent } from "../correlations/types";
@@ -42,7 +45,8 @@ export async function getSignalInvestigation(
   const cached = await getPersistedInvestigation("signal", id);
   if (cached) return cached;
 
-  return refreshSignalInvestigation(id);
+  // Web reads use a SELECT-only role; only scheduled workers persist context.
+  return buildSignalInvestigation(id, mode, DEFAULT_CONTEXT_PROVIDERS());
 }
 
 export async function refreshSignalInvestigation(
@@ -83,7 +87,10 @@ export async function getCorrelatedEventInvestigation(
   }
 
   if (!options.forceRefresh) {
-    const cached = await getPersistedInvestigation("correlated_event", event.id);
+    const cached = await getPersistedInvestigation(
+      "correlated_event",
+      event.id,
+    );
     if (cached) return cached;
   }
   const investigation = await buildInvestigation(event, {

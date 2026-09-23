@@ -1,44 +1,24 @@
-# WORLD SIGNAL free-tier budget
+# WORLD SIGNAL storage and collection budget
 
-WORLD SIGNAL is designed to stay inside small hosted-database and public-API budgets by storing events and compact aggregates, not global raw feeds.
+The hosted database uses Aiven Free (1 GB). Keep `DATABASE_POOL_MAX=2` in scheduled jobs and check actual disk consumption before expanding collection coverage. There is currently no automatic disk-budget circuit breaker; do not treat a target size as an enforced limit.
 
-## Hard operating envelope
+## Implemented retention
 
-- Hosted PostgreSQL target: **1 GB disk**. Operational target is <= 650 MB; warning at 70%, protective mode at 82%, emergency compaction at 90%.
-- PostgreSQL connections: keep the application pool small (`DATABASE_POOL_MAX=2` in scheduled jobs; <=5 locally) because the free Aiven PostgreSQL plan exposes a small connection budget.
-- Open-Meteo free endpoint: non-commercial only, <10,000 calls/day, <5,000/hour and <600/minute. WORLD SIGNAL therefore batches coordinates and applies a local daily request budget below the upstream cap.
-- High-frequency providers must have independent cadences. Faster refresh must never imply refreshing every provider.
+- FIRMS hosted configuration: 48 hours of raw data, at most five raw samples per cell/hour; hourly aggregates preserve the reference history.
+- USGS, IODA and aviation observations: 35 days in compact mode. Aviation also prunes during its analysis.
+- Resolved signals, correlation versions and correlation runs: 35 days.
+- Provider runs: 40 days.
+- World-event change history: 30 days; resolved world events: 35 days.
+- Weather and marine API arrays are evaluated in memory; normalized events and compact climate references are retained.
 
-## Retention defaults
+The worker calls `maintainCompactStorage`; PostgreSQL can reuse space after deletion but disk size does not immediately shrink. `db:budget` and `db:compact` are not implemented commands.
 
-| Data | Default retention | Storage shape |
-| --- | ---: | --- |
-| Current `world_events` | active + 21 days resolved | one normalized JSON event |
-| `world_event_history` | 14 days | only semantic state changes |
-| Aviation aggregates | 21 days | one regional count / 15 min |
-| FIRMS raw observations | 24 h in hosted compact mode | bounded samples only |
-| Context investigation history | 14 days | prior investigation snapshots |
-| Climate references | retained | compact mean/stddev/p10/p90/N only |
-| Raw weather / marine API arrays | 0 | evaluated in memory and discarded |
+## Deployment and collection
 
-These are defaults for free-tier operation and can be raised by environment variables on a larger plan.
+Run `npm run db:migrate` once with the database administrator credentials before deploying schema changes. The migration runner recognizes the byte-identical local `005_correlations.sql` draft as `008_correlations.sql`. It does not overwrite an altered migration.
 
-## API-budget policy
+Scheduled collectors use the restricted worker role and never run schema migrations. The Vercel application uses the read-only role. New tables need the corresponding default privileges; check these when changing owners or provisioning a new database.
 
-Every scheduled external provider must define:
+Collectors run on independent schedules defined in `.github/workflows`. GitHub scheduled jobs can be delayed. The UI reports collection time, source time, coverage and reference-history availability rather than promising continuous real-time coverage. API failures must not be interpreted as normal measurements or automatic recovery.
 
-1. a cadence;
-2. a maximum requests-per-run budget;
-3. a conservative daily budget where the provider publishes a quota;
-4. batching where the API supports it;
-5. failure semantics that do not infer recovery from a failed or skipped refresh.
-
-Open-Meteo budgets are deliberately lower than the published free limits. Climate archive cache misses are separately bounded because one 30-year historical query is much more expensive than a forecast batch.
-
-## Protective database mode
-
-`npm run db:budget` inspects the current PostgreSQL database size and major WORLD SIGNAL tables.
-
-`npm run db:compact` applies retention using the configured free-tier defaults. Scheduled maintenance should run compaction before optional low-priority collectors. When the configured database budget is exceeded, low-priority historical expansion should stop before current-event ingestion.
-
-The goal is not to fill the free plan. The goal is to leave enough headroom for indexes, PostgreSQL overhead, migrations and temporary growth during maintenance.
+Open-Meteo's free endpoint is for non-commercial use. Its batched requests reduce usage; consult its terms before commercial deployment. Do not claim an enforced daily request budget: the current collectors bound each batch, not total account-wide daily usage.

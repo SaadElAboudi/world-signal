@@ -171,7 +171,11 @@ test("PostgreSQL aggregation and anomaly recomputation produce independently tra
   assert.equal((await computeSignals(now)).status, "success");
   const snapshot = await getSnapshot(new URLSearchParams("mode=live"), now);
   assert.equal(snapshot.mode, "live");
-  assert.equal(snapshot.status, "live");
+  assert.equal(snapshot.status, "partial");
+  assert.equal(
+    snapshot.providers.find((p) => p.id === "ioda")?.status,
+    "unavailable",
+  );
   assert.ok(snapshot.signals.some((s) => s.type === "earthquake"));
   const fire = snapshot.signals.find((s) => s.type === "wildfire")!;
   assert.equal(fire.observedValue, 80);
@@ -394,4 +398,71 @@ test("compact fire history preserves baselines, revisions and rollback while bou
       delete process.env.FIRMS_RAW_RETENTION_HOURS;
     else process.env.FIRMS_RAW_RETENTION_HOURS = previousMode;
   }
+});
+
+test("aviation stale observations preserve an active alert; fresh normal activity resolves it", async () => {
+  const { computeAviationSignals } = await import("../src/server/aviation");
+  const point = (timestamp: string, value: number): Observation => ({
+    id: `aviation-test:${timestamp}`,
+    upstreamId: timestamp,
+    provider: "adsblol",
+    type: "aviation",
+    latitude: 49,
+    longitude: 6,
+    timestamp,
+    sourceUpdatedAt: timestamp,
+    value,
+    cellId: geographicCell(49, 6, "earthquake"),
+    quality: 0.55,
+    sourceUrl: "https://example.test/aviation",
+    active: true,
+    properties: {
+      metric: "observed_airborne_aircraft_snapshot",
+      seriesKey: "test-region",
+      region: "Test region",
+      radiusNm: 250,
+      stepSeconds: 900,
+      snapshotSeconds: 30,
+    },
+  });
+  const points = Array.from({ length: 20 }, (_, i) =>
+    point(new Date(now.getTime() - (i + 1) * 86400000).toISOString(), 40),
+  );
+  points.push(point(now.toISOString(), 10));
+  const fixture: ObservationProvider = {
+    id: "adsblol",
+    name: "Aviation fixture",
+    type: "aviation",
+    fetchRawData: async () => ({
+      data: null,
+      fetchedAt: now.toISOString(),
+      sourceAsOf: now.toISOString(),
+      coverageStart: points[19].timestamp,
+      coverageEnd: now.toISOString(),
+      sourceUrl: "https://example.test/aviation",
+    }),
+    normalize: () => ({
+      observations: points,
+      received: points.length,
+      rejected: 0,
+      sourceAsOf: now.toISOString(),
+      coverageStart: points[19].timestamp,
+      coverageEnd: now.toISOString(),
+    }),
+  };
+  await ingest(fixture, true, now);
+  await computeAviationSignals(now);
+  const getSignal = async () =>
+    (
+      await getPool().query(
+        "SELECT resolved_at,payload FROM signals WHERE id='adsblol:disruption:test-region'",
+      )
+    ).rows[0];
+  assert.equal((await getSignal()).payload.status, "active");
+  await computeAviationSignals(new Date(now.getTime() + 2 * 3600000));
+  assert.equal((await getSignal()).resolved_at, null);
+  points[points.length - 1] = point(now.toISOString(), 40);
+  await ingest(fixture, true, now);
+  await computeAviationSignals(now);
+  assert.equal((await getSignal()).payload.status, "resolved");
 });

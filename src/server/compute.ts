@@ -1,3 +1,5 @@
+import { computeActivitySignals } from "./activity";
+import { computeCorrelations } from "./correlations";
 import { fireAggregates } from "../database/fire-history";
 import { getPool } from "../database/client";
 import { getConfig } from "./config";
@@ -11,7 +13,7 @@ import { mergeCoverage } from "../signals/baseline";
 import type { Observation } from "../providers/contract";
 import type { WorldSignal } from "../core/types";
 import { errorCode, log } from "./log";
-export async function computeSignals(now = new Date()) {
+async function computeEnvironmentalSignals(now = new Date()) {
   const client = await getPool().connect();
   let locked = false;
   let activeProvider: string | null = null;
@@ -168,6 +170,7 @@ export async function computeSignals(now = new Date()) {
         throw error;
       }
     }
+    // Release the compute client before sub-engines acquire pooled connections.
     return { status: "success", signals: count };
   } catch (error) {
     if (activeProvider)
@@ -186,4 +189,11 @@ export async function computeSignals(now = new Date()) {
         .catch(() => {});
     client.release();
   }
+}
+
+export async function computeSignals(now = new Date()) {
+  const result = await computeEnvironmentalSignals(now);
+  await computeActivitySignals(now);
+  await computeCorrelations(now);
+  return result;
 }

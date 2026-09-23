@@ -30,6 +30,8 @@ export interface RawBatch<T> {
   sourceUrl: string;
 }
 export interface NormalizedBatch {
+  completeSnapshot?: boolean;
+  scopes?: import("./batch").ScopeCollection[];
   observations: Observation[];
   received: number;
   rejected: number;

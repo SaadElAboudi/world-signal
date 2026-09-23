@@ -205,6 +205,7 @@ button svg {
   min-height: 0;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr) 330px;
+  grid-template-rows: minmax(0, 1fr);
 }
 .layer-sidebar {
   padding: 29px 18px 20px;
@@ -1718,5 +1719,203 @@ button svg {
   }
   .demo-mini {
     font-size: 6px;
+  }
+}
+
+/* Correlations remain restrained and distinct from source observations. */
+.correlation-marker {
+  border: 1px solid #93d7d0;
+  background: #112d32e8;
+  color: #c8fff3;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  font-size: 25px;
+  line-height: 26px;
+  cursor: pointer;
+  box-shadow: 0 0 18px #79d4bc33;
+}
+.multi-signal-card {
+  border-left: 2px solid #88d5c8;
+  background: linear-gradient(100deg, #16302e66, transparent);
+}
+.multi-signal-card p {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: capitalize;
+  margin: 6px 0 10px;
+}
+.event-timeline {
+  list-style: none;
+  padding: 0 0 0 15px;
+  border-left: 1px solid #40595b;
+}
+.event-timeline li {
+  display: grid;
+  gap: 5px;
+  padding: 0 0 20px 7px;
+  font-size: 12px;
+}
+.event-timeline time {
+  color: #91b7bb;
+  font: 10px var(--font-mono);
+}
+.event-timeline strong {
+  text-transform: capitalize;
+}
+.activity-counts {
+  font-size: 10px;
+  color: #8fa9b0;
+}
+.language-switch {
+  display: flex;
+  gap: 3px;
+  border: 1px solid #34484d;
+  border-radius: 5px;
+  padding: 2px;
+}
+.language-switch button {
+  border: 0;
+  background: transparent;
+  color: #99adb4;
+  font: 10px var(--font-mono);
+  padding: 5px;
+  cursor: pointer;
+}
+.language-switch button[aria-pressed="true"] {
+  background: #26463f;
+  color: #b8f4d8;
+  border-radius: 3px;
+}
+@media (max-width: 1100px) {
+  .activity-counts {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .header-time {
+    display: none;
+  }
+  .header-actions {
+    gap: 6px;
+  }
+  .language-switch button {
+    padding: 5px 3px;
+  }
+}
+.feed-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 8px;
+  gap: 5px;
+  border-bottom: 1px solid #26383e;
+  flex-shrink: 0;
+}
+.feed-tabs button {
+  font-size: 11px;
+  font-weight: 600;
+  color: #a8bcc2;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 10px 5px;
+  cursor: pointer;
+}
+.feed-tabs button[aria-selected="true"] {
+  color: #c9f6e5;
+  background: #17372f;
+  border-color: #345c4d;
+}
+.world-event-marker {
+  background: #142632;
+  color: #a8d4ff;
+  border: 1px solid #5b819b;
+  border-radius: 5px;
+  font-size: 22px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+}
+.event-properties {
+  font-size: 11px;
+  line-height: 1.6;
+}
+.event-properties div {
+  padding: 8px 0;
+  border-bottom: 1px solid #283d44;
+  overflow-wrap: anywhere;
+}
+.event-properties dt {
+  color: #99b6bf;
+}
+.event-properties dd {
+  margin: 0;
+  color: #cad9dc;
+}
+.signal-card small {
+  overflow-wrap: anywhere;
+}
+.signal-card h3 {
+  overflow-wrap: anywhere;
+}
+.detail-scroll {
+  overflow-wrap: anywhere;
+}
+
+/* Keep labels readable while the globe remains the visual focus. */
+.signal-card h3 {
+  font-size: 13px;
+  line-height: 1.55;
+}
+.feed-subtitle,
+.layer-copy small,
+.globe-caption {
+  font-size: 11px;
+}
+.detail-section p,
+.method-details p,
+.context-note p {
+  line-height: 1.7;
+}
+.feed-tabs button {
+  min-height: 44px;
+}
+.signal-detail {
+  min-height: 0;
+  flex: 1;
+}
+.activity-counts[hidden] {
+  display: none;
+}
+
+@media (min-width: 761px) and (max-width: 1000px) {
+  .event-category-list .layer-name {
+    display: block;
+    font-size: 10px;
+    overflow-wrap: anywhere;
+  }
+  .event-category-list .layer-button {
+    padding-inline: 2px;
+  }
+}
+@media (max-width: 760px) {
+  .event-category-list {
+    overflow-x: auto;
+    justify-content: flex-start;
+  }
+  .event-category-list .layer-button {
+    flex: 0 0 auto;
+    min-height: 44px;
+  }
+  .feed-panel {
+    min-height: 420px;
+    height: 580px;
+    flex-shrink: 0;
+  }
+  .signal-detail {
+    height: auto;
+  }
+  .detail-scroll {
+    min-height: 0;
   }
 }
