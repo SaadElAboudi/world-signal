@@ -4,17 +4,17 @@ import { pruneWorldEventStorage } from "./world-events";
 import { pruneBudgetTelemetry, storageBudget } from "../server/budgets";
 
 /**
- * Compact storage is adaptive: preserve the normal mini-history while the database is healthy,
- * then shorten non-critical history before the managed free-tier disk is endangered.
+ * Compact storage is adaptive. The normal free-tier profile already stays conservative;
+ * soft/hard modes shorten non-critical history further before disk saturation.
  */
 export async function maintainCompactStorage(now = new Date()) {
   const budget = await storageBudget(now);
   const profile =
     budget.state === "hard_limit"
-      ? { eventHistoryDays: 7, resolvedDays: 14, signalDays: 14, runDays: 21 }
+      ? { eventHistoryDays: 3, resolvedDays: 7, signalDays: 7, runDays: 14 }
       : budget.state === "soft_limit"
-        ? { eventHistoryDays: 14, resolvedDays: 21, signalDays: 21, runDays: 30 }
-        : { eventHistoryDays: 30, resolvedDays: 35, signalDays: 35, runDays: 40 };
+        ? { eventHistoryDays: 7, resolvedDays: 14, signalDays: 14, runDays: 21 }
+        : { eventHistoryDays: 14, resolvedDays: 21, signalDays: 21, runDays: 30 };
 
   await pruneWorldEventStorage(now, profile.eventHistoryDays, profile.resolvedDays);
   await pruneBudgetTelemetry(now);
