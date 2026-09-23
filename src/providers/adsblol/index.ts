@@ -1,3 +1,4 @@
+import { DataError } from "../../server/log";
 import { createHash } from "node:crypto";
 import { latLngToCell } from "h3-js";
 import { z } from "zod";
@@ -217,7 +218,7 @@ export class AdsbLolProvider implements ObservationProvider<RawData> {
     const fetchedAt = context.now.toISOString();
     const snapshots: RawSentinel[] = [];
     for (const sentinel of this.sentinels) {
-      if (snapshots.length) await this.pause(1200);
+      if (snapshots.length) await this.pause(5000);
       const url = `${this.endpoint}/v2/point/${sentinel.latitude}/${sentinel.longitude}/${sentinel.radiusNm}`;
       let response = await this.fetchImpl(url, {
         headers: {
@@ -245,11 +246,12 @@ export class AdsbLolProvider implements ObservationProvider<RawData> {
           signal: AbortSignal.timeout(10000),
         });
       }
-      if (!response.ok)
-        throw new Error(`ADSB.lol request failed: ${response.status}`);
-      const payload = responseSchema.parse(await response.json());
+      if (!response.ok) throw new DataError(`upstream_http_${response.status}`);
+      const parsed = responseSchema.safeParse(await response.json());
+      if (!parsed.success) throw new DataError("invalid_aviation_response");
+      const payload = parsed.data;
       if (Math.abs(payload.now - context.now.getTime()) > 5 * 60_000)
-        throw new Error("ADSB.lol stale or future snapshot");
+        throw new DataError("stale_aviation_snapshot");
       const fresh = new Set<string>();
       for (const aircraft of payload.ac) {
         if (
