@@ -2,10 +2,14 @@ import type { PoolClient } from "pg";
 import type { Observation } from "../providers/contract";
 import type { WorldSignal } from "../core/types";
 import { getPool } from "../database/client";
+import { getStorageBudgetState } from "../database/resource-governor";
+import { storageProfileForPressure } from "../database/storage-profile";
 import { AdsbLolProvider } from "../providers/adsblol";
 import { aviationDisruption } from "../signals/aviation";
 import { ingest } from "./ingestion";
+import { getConfig } from "./config";
 import { log } from "./log";
+import { collectionGuard } from "./resource-budget";
 
 function rowToObservation(row: Record<string, unknown>): Observation {
   return {
@@ -26,7 +30,22 @@ function rowToObservation(row: Record<string, unknown>): Observation {
   };
 }
 
-async function saveSignals(client: PoolClient, signals: WorldSignal[], now: Date) {
+async function aviationRetentionDays() {
+  const storage = await getStorageBudgetState();
+  const config = getConfig();
+  const profile = storageProfileForPressure(storage.pressure, {
+    firmsRawRetentionHours: config.firmsRawRetentionHours,
+    firmsRawSamplesPerCellHour: config.firmsRawSamplesPerHour,
+  });
+  return { days: profile.observationDays, storage };
+}
+
+async function saveSignals(
+  client: PoolClient,
+  signals: WorldSignal[],
+  now: Date,
+  retentionDays: number,
+) {
   await client.query("BEGIN");
   try {
     const payloads = JSON.stringify(signals);
@@ -54,8 +73,8 @@ async function saveSignals(client: PoolClient, signals: WorldSignal[], now: Date
       [now],
     );
     await client.query(
-      "DELETE FROM observations WHERE provider='adsblol' AND occurred_at < $1",
-      [new Date(now.getTime() - 35 * 86_400_000)],
+      "DELETE FROM observations WHERE provider='adsblol' AND occurred_at < $1::timestamptz-($2*interval '1 day')",
+      [now, retentionDays],
     );
     await client.query("COMMIT");
   } catch (error) {
@@ -66,12 +85,13 @@ async function saveSignals(client: PoolClient, signals: WorldSignal[], now: Date
 
 export async function computeAviationSignals(now = new Date()) {
   const client = await getPool().connect();
+  const retention = await aviationRetentionDays();
   try {
     const result = await client.query(
       `SELECT * FROM observations
-       WHERE provider='adsblol' AND active AND occurred_at >= $1
+       WHERE provider='adsblol' AND active AND occurred_at >= $1::timestamptz-($2*interval '1 day')
        ORDER BY occurred_at ASC,id ASC`,
-      [new Date(now.getTime() - 35 * 86_400_000)],
+      [now, retention.days],
     );
     const observations = result.rows.map(rowToObservation);
     const bySeries = new Map<string, Observation[]>();
@@ -89,10 +109,12 @@ export async function computeAviationSignals(now = new Date()) {
       const signal = aviationDisruption(current, series.slice(0, -1), now);
       if (signal) signals.push(signal);
     }
-    await saveSignals(client, signals, now);
+    await saveSignals(client, signals, now, retention.days);
     log("aviation.analysis.completed", {
       regions: bySeries.size,
       signals: signals.length,
+      retentionDays: retention.days,
+      storagePressure: retention.storage.pressure,
     });
     return { status: "success" as const, regions: bySeries.size, signals: signals.length };
   } finally {
@@ -103,6 +125,15 @@ export async function computeAviationSignals(now = new Date()) {
 export async function refreshAviation(now = new Date()) {
   if (process.env.ADSB_LOL_ENABLED === "false")
     return { status: "disabled" as const, regions: 0, signals: 0 };
+  // One request per configured sentinel region; current v1 network contains 20 regions.
+  const guard = await collectionGuard("adsblol", 20, { storageSensitive: true, now });
+  if (!guard.allowed) {
+    log("aviation.refresh.skipped", {
+      reason: guard.reason,
+      storagePressure: guard.storage.pressure,
+    });
+    return { status: "budget_limited" as const, regions: 0, signals: 0 };
+  }
   const result = await ingest(new AdsbLolProvider(), false, now);
   if (result.status !== "success")
     return { status: result.status, regions: 0, signals: 0 };
