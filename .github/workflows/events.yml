@@ -1,7 +1,5 @@
-name: Refresh world events
+name: Refresh world events (manual)
 on:
-  schedule:
-    - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
 permissions:
   contents: read
@@ -17,10 +15,12 @@ jobs:
       DATABASE_URL: ${{ secrets.WORLD_SIGNAL_DATABASE_URL }}
       DATABASE_SSL_CA: ${{ secrets.WORLD_SIGNAL_DATABASE_CA }}
       DATABASE_POOL_MAX: "2"
+      DATABASE_STORAGE_QUOTA_BYTES: "1073741824"
       WORLD_SIGNAL_MODE: live
       IODA_ENABLED: "false"
       OPEN_METEO_ENABLED: "true"
       OPEN_METEO_ENDPOINT: ${{ vars.OPEN_METEO_ENDPOINT || 'https://api.open-meteo.com/v1/forecast' }}
+      OPEN_METEO_ARCHIVE_ENDPOINT: ${{ vars.OPEN_METEO_ARCHIVE_ENDPOINT || 'https://archive-api.open-meteo.com/v1/archive' }}
       OPEN_METEO_API_KEY: ${{ secrets.OPEN_METEO_API_KEY }}
     steps:
       - uses: actions/checkout@v4
