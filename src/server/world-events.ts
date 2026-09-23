@@ -23,12 +23,25 @@ const CATEGORIES = new Set<EventCategory>([
   "earth_observation",
 ]);
 
+function dailyBudget(envName: string, fallback: number) {
+  const value = Number(process.env[envName]);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
 const INTERNAL_API_BUDGETS = {
-  eonet: 500,
-  openMeteo: 4_000,
-  ioda: 500,
-  entsoe: 200,
-} as const;
+  get eonet() {
+    return dailyBudget("API_BUDGET_EONET_DAILY", 500);
+  },
+  get openMeteo() {
+    return dailyBudget("API_BUDGET_OPEN_METEO_DAILY", 4_000);
+  },
+  get ioda() {
+    return dailyBudget("API_BUDGET_IODA_DAILY", 500);
+  },
+  get entsoe() {
+    return dailyBudget("API_BUDGET_ENTSOE_DAILY", 200);
+  },
+};
 
 type RefreshOptions = { now?: Date; days?: number; limit?: number };
 type EventTransform = (events: WorldEvent[]) => Promise<WorldEvent[]>;
