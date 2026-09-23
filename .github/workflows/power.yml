@@ -1,0 +1,35 @@
+name: Refresh power grid sentinels
+on:
+  schedule:
+    - cron: "41 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: world-signal-production-power
+  cancel-in-progress: false
+jobs:
+  power:
+    if: vars.WORLD_SIGNAL_INGEST_ENABLED == 'true' && vars.ENTSOE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      DATABASE_URL: ${{ secrets.WORLD_SIGNAL_DATABASE_URL }}
+      DATABASE_SSL_CA: ${{ secrets.WORLD_SIGNAL_DATABASE_CA }}
+      DATABASE_POOL_MAX: "2"
+      WORLD_SIGNAL_MODE: live
+      ENTSOE_ENABLED: "true"
+      ENTSOE_SECURITY_TOKEN: ${{ secrets.ENTSOE_SECURITY_TOKEN }}
+      ENTSOE_ENDPOINT: https://web-api.tp.entsoe.eu/api
+      DATABASE_STORAGE_QUOTA_BYTES: "1073741824"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Apply database migrations
+        run: npm run db:migrate
+      - name: Refresh compact power-grid sentinels
+        run: npm run power:refresh
