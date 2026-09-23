@@ -5,6 +5,7 @@ import { OpenMeteoMarineProvider } from "../events/providers/open-meteo-marine";
 import { IodaInternetOutageProvider } from "../events/providers/ioda";
 import { getPool } from "../database/client";
 import { enrichWeatherWithClimatology } from "./climate";
+import { collectionGuard, type BudgetedProvider } from "./resource-budget";
 import {
   getWorldEvent,
   listWorldEvents,
@@ -24,6 +25,27 @@ const CATEGORIES = new Set<EventCategory>([
 type RefreshOptions = { now?: Date; days?: number; limit?: number };
 type EventTransform = (events: WorldEvent[]) => Promise<WorldEvent[]>;
 
+function emptyResult(provider: string, status: "disabled" | "budget_limited" | "skipped") {
+  return {
+    provider,
+    status,
+    received: 0,
+    inserted: 0,
+    updated: 0,
+    unchanged: 0,
+    resolved: 0,
+  } as const;
+}
+
+async function withinBudget(
+  provider: BudgetedProvider,
+  calls: number,
+  now?: Date,
+) {
+  const guard = await collectionGuard(provider, calls, { now });
+  return guard.allowed ? null : emptyResult(provider, "budget_limited");
+}
+
 async function refreshProvider(
   provider: EventProvider,
   options: RefreshOptions = {},
@@ -37,16 +59,7 @@ async function refreshProvider(
       "SELECT pg_try_advisory_lock(hashtext($1)) AS locked",
       [lockName],
     );
-    if (!lock.rows[0]?.locked)
-      return {
-        provider: provider.id,
-        status: "skipped" as const,
-        received: 0,
-        inserted: 0,
-        updated: 0,
-        unchanged: 0,
-        resolved: 0,
-      };
+    if (!lock.rows[0]?.locked) return emptyResult(provider.id, "skipped");
     try {
       const fetched = await provider.fetchEvents(options);
       const events = transform ? await transform(fetched) : fetched;
@@ -74,20 +87,16 @@ async function refreshProvider(
 }
 
 export async function refreshEonetWorldEvents(options: RefreshOptions = {}) {
+  const limited = await withinBudget("eonet", 1, options.now);
+  if (limited) return limited;
   return refreshProvider(new EonetEventProvider(), options);
 }
 
 export async function refreshWeatherWorldEvents(options: RefreshOptions = {}) {
-  if (process.env.OPEN_METEO_ENABLED !== "true")
-    return {
-      provider: "open-meteo",
-      status: "disabled" as const,
-      received: 0,
-      inserted: 0,
-      updated: 0,
-      unchanged: 0,
-      resolved: 0,
-    };
+  if (process.env.OPEN_METEO_ENABLED !== "true") return emptyResult("open-meteo", "disabled");
+  // Seven H3-r0 forecast batches + at most two bounded archive cache misses.
+  const limited = await withinBudget("open-meteo", 9, options.now);
+  if (limited) return limited;
   const endpoint = process.env.OPEN_METEO_ENDPOINT || undefined;
   const archiveEndpoint = process.env.OPEN_METEO_ARCHIVE_ENDPOINT || undefined;
   const apiKey = process.env.OPEN_METEO_API_KEY || undefined;
@@ -105,15 +114,10 @@ export async function refreshWeatherWorldEvents(options: RefreshOptions = {}) {
 
 export async function refreshMarineWorldEvents(options: RefreshOptions = {}) {
   if (process.env.OPEN_METEO_MARINE_ENABLED === "false")
-    return {
-      provider: "open-meteo-marine",
-      status: "disabled" as const,
-      received: 0,
-      inserted: 0,
-      updated: 0,
-      unchanged: 0,
-      resolved: 0,
-    };
+    return emptyResult("open-meteo-marine", "disabled");
+  // 24 sentinels / default 12-coordinate batches = two requests.
+  const limited = await withinBudget("open-meteo", 2, options.now);
+  if (limited) return { ...limited, provider: "open-meteo-marine" };
   const endpoint = process.env.OPEN_METEO_MARINE_ENDPOINT || undefined;
   const apiKey = process.env.OPEN_METEO_API_KEY || undefined;
   return refreshProvider(
@@ -124,16 +128,9 @@ export async function refreshMarineWorldEvents(options: RefreshOptions = {}) {
 }
 
 export async function refreshInternetWorldEvents(options: RefreshOptions = {}) {
-  if (process.env.IODA_ENABLED === "false")
-    return {
-      provider: "ioda",
-      status: "disabled" as const,
-      received: 0,
-      inserted: 0,
-      updated: 0,
-      unchanged: 0,
-      resolved: 0,
-    };
+  if (process.env.IODA_ENABLED === "false") return emptyResult("ioda", "disabled");
+  const limited = await withinBudget("ioda", 1, options.now);
+  if (limited) return limited;
   const endpoint = process.env.IODA_ENDPOINT || undefined;
   return refreshProvider(
     new IodaInternetOutageProvider({ endpoint }),
