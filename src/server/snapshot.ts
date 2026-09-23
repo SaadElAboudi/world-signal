@@ -1,3 +1,5 @@
+import { operationalProviders } from "../providers/registry";
+import { demoCorrelations } from "../providers/demo-correlations";
 import { getPool } from "../database/client";
 import { demoSnapshot } from "../providers/demo";
 import type {
@@ -47,6 +49,9 @@ export async function getSnapshot(
     return {
       ...demoSnapshot,
       status: "demo",
+      correlations: demoCorrelations.filter((e) =>
+        e.signalIds.every((id) => filtered.some((s) => s.id === id)),
+      ),
       signals: filtered.slice(query.offset, query.offset + query.limit),
       total: filtered.length,
       truncated: filtered.length > query.offset + query.limit,
@@ -86,7 +91,20 @@ export async function getSnapshot(
         )
       ).rows[0].count,
     );
+    const signalIds = new Set(result.rows.map((r) => r.payload.id));
+    const correlationsResult = await getPool().query(
+      "SELECT payload FROM correlated_events WHERE window_end >= $1 AND window_end <= $2 AND ($3 OR status='active') ORDER BY updated_at DESC LIMIT 100",
+      [query.since, query.until, query.includeResolved],
+    );
+    const correlationRun = await getPool().query(
+      "SELECT max(computed_at) AS as_of FROM correlation_runs",
+    );
     const snapshot: SignalSnapshot = {
+      correlations: correlationsResult.rows
+        .map((r) => r.payload)
+        .filter((e) => e.signalIds.every((id: string) => signalIds.has(id))),
+      correlationAsOf: correlationRun.rows[0]?.as_of?.toISOString() ?? null,
+
       mode: "live",
       collectionCadenceMinutes: getConfig().collectionCadenceMinutes,
       asOf: now.toISOString(),
@@ -108,20 +126,13 @@ export async function getSnapshot(
       status: "unavailable",
       signals: [],
       total: 0,
-      providers: [
-        {
-          id: "usgs",
-          name: "USGS",
-          status: "unavailable",
-          error: "database_unavailable",
-        },
-        {
-          id: "firms",
-          name: "NASA FIRMS",
-          status: "unavailable",
-          error: "database_unavailable",
-        },
-      ],
+      providers: operationalProviders.map((p) => ({
+        id: p.id,
+        name: p.name,
+        system: p.system,
+        status: "unavailable" as const,
+        error: "database_unavailable",
+      })),
     };
   }
 }

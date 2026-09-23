@@ -1,3 +1,5 @@
+import { IodaProvider } from "../providers/ioda";
+import { AdsbProvider } from "../providers/adsb-lol";
 import { getConfig } from "./config";
 import { getPool } from "../database/client";
 import { storeObservations } from "../database/observations";
@@ -5,7 +7,12 @@ import { UsgsProvider } from "../providers/usgs";
 import { FirmsProvider } from "../providers/nasa-firms";
 import type { ObservationProvider } from "../providers/contract";
 import { DataError, errorCode, log } from "./log";
-export const providers = [new UsgsProvider(), new FirmsProvider()];
+export const providers = [
+  new UsgsProvider(),
+  new FirmsProvider(),
+  new IodaProvider(),
+  new AdsbProvider(),
+];
 export async function ingest(
   provider: ObservationProvider,
   history = false,
@@ -57,6 +64,13 @@ export async function ingest(
       getConfig().firmsRawRetentionHours,
       getConfig().firmsRawSamplesPerHour,
     );
+    if (batch.scopes)
+      await client.query(
+        `INSERT INTO provider_scopes(provider,scope_id,label,ok,checked_at,latest_observation_at,error_code)
+      SELECT $1,s->>'id',s->>'label',(s->>'ok')::boolean,$2,(s->>'latestObservationAt')::timestamptz,s->>'error' FROM jsonb_array_elements($3::jsonb) s
+      ON CONFLICT(provider,scope_id) DO UPDATE SET label=EXCLUDED.label,ok=EXCLUDED.ok,checked_at=EXCLUDED.checked_at,latest_observation_at=COALESCE(EXCLUDED.latest_observation_at,provider_scopes.latest_observation_at),error_code=EXCLUDED.error_code`,
+        [provider.id, now, JSON.stringify(batch.scopes)],
+      );
     let latest: string | null = null;
     for (const o of batch.observations)
       if (!latest || o.timestamp > latest) latest = o.timestamp;

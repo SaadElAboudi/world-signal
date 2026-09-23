@@ -4,6 +4,7 @@ export interface MatchedBaselineOptions {
   now: Date;
   match: "hour-and-weekday" | "hour-and-day-kind";
   minSamples?: number;
+  maxAgeMinutes?: number;
 }
 function sameSeries(a: Observation, b: Observation) {
   return (
@@ -37,7 +38,7 @@ export function matchedActivityBaseline(
     !Number.isFinite(date.getTime()) ||
     !Number.isFinite(now) ||
     date.getTime() > now ||
-    now - date.getTime() > 90 * 60000
+    now - date.getTime() > (options.maxAgeMinutes ?? 90) * 60000
   )
     return unavailable("stale_or_future_observation");
   if (

@@ -5,7 +5,20 @@ export async function maintainCompactStorage(now = new Date()) {
   if (!getConfig().firmsRawRetentionHours) return;
   const pool = getPool();
   await pool.query(
-    "DELETE FROM observations WHERE provider='usgs' AND occurred_at<$1::timestamptz-interval '35 days'",
+    "DELETE FROM signal_versions WHERE recorded_at<$1::timestamptz-interval '35 days'",
+    [now],
+  );
+  await pool.query(
+    "DELETE FROM correlated_events WHERE window_end<$1::timestamptz-interval '35 days'",
+    [now],
+  );
+  await pool.query(
+    "DELETE FROM correlation_runs WHERE computed_at<$1::timestamptz-interval '35 days'",
+    [now],
+  );
+
+  await pool.query(
+    "DELETE FROM observations WHERE provider IN ('usgs','ioda','adsblol') AND occurred_at<$1::timestamptz-interval '35 days'",
     [now],
   );
   await pool.query(

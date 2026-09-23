@@ -30,11 +30,11 @@ export const PROVIDER_REGISTRY: readonly ProviderMetadata[] = [
   },
   {
     id: "ioda",
-    name: "IODA",
+    name: "IODA · active probing",
     system: "internet",
     independenceGroup: "internet-measurement",
     sourceUrl: "https://ioda.inetintel.cc.gatech.edu/",
-    operational: false,
+    operational: true,
   },
   {
     id: "cloudflare",
@@ -43,6 +43,14 @@ export const PROVIDER_REGISTRY: readonly ProviderMetadata[] = [
     independenceGroup: "internet-measurement",
     sourceUrl: "https://radar.cloudflare.com/",
     operational: false,
+  },
+  {
+    id: "adsblol",
+    name: "ADSB.lol",
+    system: "aviation",
+    independenceGroup: "aviation-measurement",
+    sourceUrl: "https://www.adsb.lol/",
+    operational: true,
   },
   {
     id: "opensky",
@@ -56,3 +64,7 @@ export const PROVIDER_REGISTRY: readonly ProviderMetadata[] = [
 export function providerMetadata(id: string) {
   return PROVIDER_REGISTRY.find((provider) => provider.id === id);
 }
+
+export const operationalProviders = PROVIDER_REGISTRY.filter(
+  (p) => p.operational,
+);

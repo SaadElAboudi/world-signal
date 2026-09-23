@@ -261,7 +261,7 @@ export function correlate(
     );
     return {
       id: `correlation:${createHash("sha256")
-        .update(`${window}:${signalIds.join("|")}`)
+        .update(signalIds.join("|"))
         .digest("hex")
         .slice(0, 24)}`,
       geographicScope: scope,

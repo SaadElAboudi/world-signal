@@ -30,6 +30,11 @@ export function getConfig() {
     throw new Error("FIRMS_TRANSPORT must be public or api");
   return {
     mode: mode as "demo" | "live",
+    internetCountries: process.env.INTERNET_COUNTRIES,
+    internetIntervalMinutes: numberEnv("INTERNET_INTERVAL_MINUTES", 60, 60),
+    aviationIntervalMinutes: numberEnv("AVIATION_INTERVAL_MINUTES", 60, 60),
+    internetStaleMinutes: numberEnv("INTERNET_STALE_MINUTES", 180, 60),
+    aviationStaleMinutes: numberEnv("AVIATION_STALE_MINUTES", 150, 60),
     databaseUrl: process.env.DATABASE_URL,
     databaseSslCa: process.env.DATABASE_SSL_CA,
     databasePoolMax: numberEnv("DATABASE_POOL_MAX", 5, 2, 20),

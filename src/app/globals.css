@@ -1720,3 +1720,85 @@ button svg {
     font-size: 6px;
   }
 }
+
+/* Correlations remain restrained and distinct from source observations. */
+.correlation-marker {
+  border: 1px solid #93d7d0;
+  background: #112d32e8;
+  color: #c8fff3;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  font-size: 25px;
+  line-height: 26px;
+  cursor: pointer;
+  box-shadow: 0 0 18px #79d4bc33;
+}
+.multi-signal-card {
+  border-left: 2px solid #88d5c8;
+  background: linear-gradient(100deg, #16302e66, transparent);
+}
+.multi-signal-card p {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: capitalize;
+  margin: 6px 0 10px;
+}
+.event-timeline {
+  list-style: none;
+  padding: 0 0 0 15px;
+  border-left: 1px solid #40595b;
+}
+.event-timeline li {
+  display: grid;
+  gap: 5px;
+  padding: 0 0 20px 7px;
+  font-size: 12px;
+}
+.event-timeline time {
+  color: #91b7bb;
+  font: 10px var(--font-mono);
+}
+.event-timeline strong {
+  text-transform: capitalize;
+}
+.activity-counts {
+  font-size: 10px;
+  color: #8fa9b0;
+}
+.language-switch {
+  display: flex;
+  gap: 3px;
+  border: 1px solid #34484d;
+  border-radius: 5px;
+  padding: 2px;
+}
+.language-switch button {
+  border: 0;
+  background: transparent;
+  color: #99adb4;
+  font: 10px var(--font-mono);
+  padding: 5px;
+  cursor: pointer;
+}
+.language-switch button[aria-pressed="true"] {
+  background: #26463f;
+  color: #b8f4d8;
+  border-radius: 3px;
+}
+@media (max-width: 1100px) {
+  .activity-counts {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .header-time {
+    display: none;
+  }
+  .header-actions {
+    gap: 6px;
+  }
+  .language-switch button {
+    padding: 5px 3px;
+  }
+}

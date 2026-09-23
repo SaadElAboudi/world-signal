@@ -28,7 +28,11 @@ async function main() {
         const interval =
           (provider.id === "usgs"
             ? config.usgsIntervalMinutes
-            : config.firmsIntervalMinutes) * 60000;
+            : provider.id === "firms"
+              ? config.firmsIntervalMinutes
+              : provider.id === "ioda"
+                ? config.internetIntervalMinutes
+                : config.aviationIntervalMinutes) * 60000;
         if (
           process.argv.includes("--force") ||
           !last.rows[0].attempt ||

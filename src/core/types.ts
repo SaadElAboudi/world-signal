@@ -1,3 +1,4 @@
+import type { CorrelatedEvent } from "../correlations/types";
 export type SignalType = "earthquake" | "wildfire" | "internet" | "aviation";
 export type Severity = "notable" | "elevated" | "significant";
 export type DeviationType = "percentage" | "ratio" | "zscore" | "absolute";
@@ -7,6 +8,8 @@ export interface EvidencePoint {
 }
 export interface WorldSignal {
   id: string;
+  providerId?: string;
+  scopeKey?: string;
   type: SignalType;
   title: string;
   country: string;
@@ -28,11 +31,16 @@ export interface WorldSignal {
   confidence: number;
   baseline: EvidencePoint[];
   context: string;
-  kind?: "earthquake-event" | "earthquake-cluster" | "fire-cluster";
+  kind?:
+    | "earthquake-event"
+    | "earthquake-cluster"
+    | "fire-cluster"
+    | "internet-anomaly"
+    | "aviation-anomaly";
   startedAt?: string;
   updatedAt?: string;
   sourceAsOf?: string;
-  status?: "active" | "resolved";
+  status?: "detected" | "active" | "recovering" | "resolved";
   baselineLabel?: string;
   evidence?: SignalEvidence;
   magnitude?: number;
@@ -59,6 +67,11 @@ export interface SignalEvidence {
   confidenceMethod: string;
 }
 export interface ProviderHealth {
+  system?: SignalType;
+  scopes?: { configured: number; available: number; fresh: number };
+  historyDays?: number;
+  analysisState?: "ready" | "collecting_history";
+  cadenceMinutes?: number;
   id?: string;
   name: string;
   status: "demo" | "healthy" | "delayed" | "unavailable" | "error";
@@ -73,6 +86,8 @@ export interface ProviderHealth {
   error?: string | null;
 }
 export interface SignalSnapshot {
+  correlations?: CorrelatedEvent[];
+  correlationAsOf?: string | null;
   collectionCadenceMinutes?: number;
   mode: "demo" | "live";
   asOf: string;
