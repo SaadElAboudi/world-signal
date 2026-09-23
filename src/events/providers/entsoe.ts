@@ -36,27 +36,43 @@ function parseDurationMs(value: string) {
 }
 
 function tag(block: string, name: string) {
-  const expression = new RegExp(`<${name}>([^<]+)</${name}>`);
+  const expression = new RegExp(
+    `<(?:[A-Za-z0-9_-]+:)?${name}>([^<]+)</(?:[A-Za-z0-9_-]+:)?${name}>`,
+  );
   return expression.exec(block)?.[1]?.trim() ?? null;
 }
 
 export function parseEntsoeSeries(xml: string): Point[] {
-  const periods = [...xml.matchAll(/<Period>([\s\S]*?)<\/Period>/g)];
+  const periods = [
+    ...xml.matchAll(
+      /<(?:[A-Za-z0-9_-]+:)?Period>([\s\S]*?)<\/(?:[A-Za-z0-9_-]+:)?Period>/g,
+    ),
+  ];
   const points: Point[] = [];
   for (const periodMatch of periods) {
     const period = periodMatch[1];
-    const interval = /<timeInterval>([\s\S]*?)<\/timeInterval>/.exec(period)?.[1] ?? "";
+    const interval =
+      /<(?:[A-Za-z0-9_-]+:)?timeInterval>([\s\S]*?)<\/(?:[A-Za-z0-9_-]+:)?timeInterval>/.exec(
+        period,
+      )?.[1] ?? "";
     const startRaw = tag(interval, "start");
     const resolutionRaw = tag(period, "resolution");
     if (!startRaw || !resolutionRaw) continue;
     const start = Date.parse(startRaw);
     const step = parseDurationMs(resolutionRaw);
     if (!Number.isFinite(start) || !step) continue;
-    for (const pointMatch of period.matchAll(/<Point>([\s\S]*?)<\/Point>/g)) {
+    for (const pointMatch of period.matchAll(
+      /<(?:[A-Za-z0-9_-]+:)?Point>([\s\S]*?)<\/(?:[A-Za-z0-9_-]+:)?Point>/g,
+    )) {
       const point = pointMatch[1];
       const position = Number(tag(point, "position"));
       const quantity = Number(tag(point, "quantity"));
-      if (!Number.isInteger(position) || position < 1 || !Number.isFinite(quantity)) continue;
+      if (
+        !Number.isInteger(position) ||
+        position < 1 ||
+        !Number.isFinite(quantity)
+      )
+        continue;
       points.push({
         timestamp: start + (position - 1) * step,
         quantityMw: quantity,
@@ -107,11 +123,23 @@ export class EntsoeGridLoadProvider {
     this.token = options.token;
     this.fetcher = options.fetcher ?? fetch;
     this.endpoint = options.endpoint ?? "https://web-api.tp.entsoe.eu/api";
-    const max = Math.max(1, Math.min(options.zones?.length ?? ENTSOE_ZONES.length, Math.floor(options.maxZonesPerRun ?? 7)));
-    this.zones = (options.zones ?? ENTSOE_ZONES).slice(0, max);
+    const available = options.zones ?? ENTSOE_ZONES;
+    const max = Math.max(
+      1,
+      Math.min(
+        available.length,
+        Math.floor(options.maxZonesPerRun ?? 7),
+      ),
+    );
+    this.zones = available.slice(0, max);
   }
 
-  private async load(zone: EntsoeZone, processType: "A16" | "A01", start: Date, end: Date) {
+  private async load(
+    zone: EntsoeZone,
+    processType: "A16" | "A01",
+    start: Date,
+    end: Date,
+  ) {
     const url = new URL(this.endpoint);
     url.searchParams.set("securityToken", this.token);
     url.searchParams.set("documentType", "A65");
@@ -127,12 +155,13 @@ export class EntsoeGridLoadProvider {
     return parseEntsoeSeries(text);
   }
 
-  async fetchEvents(options: { now?: Date; limit?: number } = {}): Promise<WorldEvent[]> {
+  async fetchEvents(
+    options: { now?: Date; limit?: number } = {},
+  ): Promise<WorldEvent[]> {
     const now = options.now ?? new Date();
     const start = new Date(now.getTime() - 6 * 60 * 60_000);
     const end = new Date(now.getTime() + 60 * 60_000);
     const events: WorldEvent[] = [];
-    let successfulZones = 0;
     let failedZones = 0;
 
     for (const zone of this.zones) {
@@ -141,8 +170,9 @@ export class EntsoeGridLoadProvider {
           this.load(zone, "A16", start, end),
           this.load(zone, "A01", start, end),
         ]);
-        successfulZones++;
-        const eligible = actual.filter((point) => point.timestamp <= now.getTime());
+        const eligible = actual.filter(
+          (point) => point.timestamp <= now.getTime(),
+        );
         const current = eligible.at(-1);
         if (!current) continue;
         const expected = nearestForecast(current, forecast);
@@ -175,7 +205,8 @@ export class EntsoeGridLoadProvider {
           magnitude: {
             value: percent,
             unit: "% below forecast",
-            description: "Actual total load shortfall relative to the matching day-ahead forecast",
+            description:
+              "Actual total load shortfall relative to the matching day-ahead forecast",
           },
           source: {
             provider: this.id,
@@ -200,7 +231,12 @@ export class EntsoeGridLoadProvider {
       }
     }
 
-    if (!successfulZones && failedZones) throw new Error("ENTSO-E unavailable for all configured zones");
+    // Missing events are resolved only after complete authoritative coverage.
+    // Any zone failure aborts the whole refresh so a partial API response can
+    // never be mistaken for grid recovery.
+    if (failedZones > 0)
+      throw new Error("ENTSO-E incomplete zone refresh");
+
     const limit = Math.max(1, Math.min(100, options.limit ?? 100));
     return events.slice(0, limit);
   }
