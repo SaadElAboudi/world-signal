@@ -3,10 +3,16 @@ import { maintainCompactStorage } from "../src/database/retention";
 import { ingest, providers } from "../src/server/ingestion";
 import { computeSignals } from "../src/server/compute";
 import { refreshRecentInvestigations } from "../src/server/context-refresh";
-import { refreshAllWorldEvents } from "../src/server/world-events";
+import {
+  refreshAllWorldEvents,
+  refreshMarineWorldEvents,
+} from "../src/server/world-events";
+import { refreshAviation } from "../src/server/aviation";
+import { refreshPowerGrid } from "../src/server/power";
 import { getPool, closePool } from "../src/database/client";
 import { getConfig } from "../src/server/config";
 import { log, errorCode } from "../src/server/log";
+
 const once = process.argv.includes("--once");
 const eventRefreshEnabled = process.env.WORLD_EVENT_REFRESH_ENABLED !== "false";
 let stopping = false;
@@ -16,10 +22,14 @@ process.on("SIGINT", () => {
 process.on("SIGTERM", () => {
   stopping = true;
 });
+
 async function main() {
   let lastComputed = 0;
   let lastContextRefresh = 0;
   let lastEventRefresh = 0;
+  let lastMarineRefresh = 0;
+  let lastAviationRefresh = 0;
+  let lastPowerRefresh = 0;
   let lastMaintenance = 0;
   while (!stopping) {
     let failed = false;
@@ -48,10 +58,12 @@ async function main() {
             failed = true;
         }
       }
+
       if (Date.now() - lastComputed >= 300000) {
         await computeSignals();
         lastComputed = Date.now();
       }
+
       if (eventRefreshEnabled && Date.now() - lastEventRefresh >= 15 * 60000) {
         const events = await refreshAllWorldEvents({ days: 14, limit: 1000 });
         log("events.refresh.completed", {
@@ -69,6 +81,40 @@ async function main() {
         });
         lastEventRefresh = Date.now();
       }
+
+      if (eventRefreshEnabled && Date.now() - lastMarineRefresh >= 60 * 60000) {
+        const marine = await refreshMarineWorldEvents();
+        log("marine.refresh.completed", {
+          status: marine.status,
+          received: marine.received,
+          inserted: marine.inserted,
+          updated: marine.updated,
+          unchanged: marine.unchanged,
+          resolved: marine.resolved,
+        });
+        lastMarineRefresh = Date.now();
+      }
+
+      if (process.env.ADSB_LOL_ENABLED !== "false" && Date.now() - lastAviationRefresh >= config.adsbLolIntervalMinutes * 60000) {
+        const aviation = await refreshAviation();
+        log("aviation.refresh.completed", {
+          status: aviation.status,
+          regions: aviation.regions,
+          signals: aviation.signals,
+        });
+        lastAviationRefresh = Date.now();
+      }
+
+      if (process.env.ENTSOE_ENABLED === "true" && Date.now() - lastPowerRefresh >= 60 * 60000) {
+        const power = await refreshPowerGrid();
+        log("power.refresh.worker", {
+          status: power.status,
+          regions: power.regions,
+          events: power.events,
+        });
+        lastPowerRefresh = Date.now();
+      }
+
       if (Date.now() - lastContextRefresh >= 15 * 60000) {
         const contextResult = await refreshRecentInvestigations();
         log("context.refresh.completed", {
@@ -80,8 +126,16 @@ async function main() {
         });
         lastContextRefresh = Date.now();
       }
+
       if (Date.now() - lastMaintenance >= 3600000) {
-        await maintainCompactStorage();
+        const maintenance = await maintainCompactStorage();
+        log("storage.maintenance.completed", {
+          pressure: maintenance.storage.pressure,
+          usagePercent: Math.round(maintenance.storage.ratio * 100),
+          eventHistoryDays: maintenance.profile.eventHistoryDays,
+          observationDays: maintenance.profile.observationDays,
+          firmsRawRetentionHours: maintenance.profile.firmsRawRetentionHours,
+        });
         lastMaintenance = Date.now();
       }
     } catch (error) {
@@ -93,10 +147,11 @@ async function main() {
       break;
     }
     for (let i = 0; i < 60 && !stopping; i++)
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   await closePool();
 }
+
 main().catch(() => {
   process.exitCode = 1;
 });
