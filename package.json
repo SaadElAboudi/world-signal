@@ -25,7 +25,7 @@
     "worker": "tsx scripts/worker.ts",
     "db:seed": "tsx scripts/seed.ts",
     "backfill:firms": "tsx scripts/backfill-firms.ts",
-    "test:db": "tsx --test --test-concurrency=1 tests/database.integration.ts tests/context-database.integration.ts tests/world-events.database.integration.ts",
+    "test:db": "tsx --test --test-concurrency=1 tests/database.integration.ts tests/context-database.integration.ts tests/world-events.database.integration.ts tests/resource-governor.database.integration.ts",
     "db:check": "tsx scripts/check-db.ts",
     "correlations:compute": "tsx scripts/correlations.ts"
   },
