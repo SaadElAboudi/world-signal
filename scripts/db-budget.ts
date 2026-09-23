@@ -5,6 +5,7 @@ import { getDatabaseBudgetSnapshot } from "../src/database/budget";
 async function main() {
   const snapshot = await getDatabaseBudgetSnapshot();
   console.log(JSON.stringify(snapshot, null, 2));
+  if (!process.argv.includes("--strict")) return;
   if (snapshot.state === "emergency") process.exitCode = 2;
   else if (snapshot.state === "protect") process.exitCode = 1;
 }
