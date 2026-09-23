@@ -40,7 +40,10 @@ test("IODA outage provider emits compact infrastructure events", async () => {
   assert.equal(event.status, "active");
   assert.equal(event.severity, "notable");
   assert.equal(event.magnitude.value, 1200);
-  assert.equal(event.properties.severityMethod, "uncalibrated-source-score-not-used");
+  assert.equal(
+    event.properties.severityMethod,
+    "uncalibrated-source-score-not-used",
+  );
   assert.equal(event.source.provider, "ioda");
   assert.equal(event.properties.countryCode, "IR");
   assert.equal(event.properties.datasource, "ping-slash24");
@@ -82,12 +85,22 @@ test("IODA outage provider resolves old events and skips unsupported geography",
     new Date((nowSeconds - 5400) * 1000).toISOString(),
   );
   assert.equal(events[0].severity, "notable");
+  const repeated = await provider.fetchEvents({
+    now: new Date(now.getTime() + 300000),
+  });
+  assert.deepEqual(
+    repeated,
+    events,
+    "Polling must not manufacture fresh timestamps for unchanged old outages",
+  );
 });
 
 test("IODA outage provider fails closed on malformed upstream responses", async () => {
   const provider = new IodaInternetOutageProvider({
     fetchImpl: (async () =>
-      response([{ datasource: "bgp", location: "country/IR" }])) as typeof fetch,
+      response([
+        { datasource: "bgp", location: "country/IR" },
+      ])) as typeof fetch,
     resolveLocation: async () => ({ latitude: 32, longitude: 54 }),
   });
   await assert.rejects(() => provider.fetchEvents({ now }));
