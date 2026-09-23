@@ -51,7 +51,9 @@ export async function refreshRecentInvestigations(
         log("context.refresh.signal.failed", { signalId: row.id, code: errorCode(error) });
       }
     }
-    const prunedHistory = await pruneInvestigationHistory(30);
+    const configured = Number(process.env.CONTEXT_HISTORY_DAYS);
+    const historyDays = Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : 14;
+    const prunedHistory = await pruneInvestigationHistory(historyDays);
     return {
       status: "success",
       attempted: candidates.rowCount ?? 0,
