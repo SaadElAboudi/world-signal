@@ -129,10 +129,7 @@ export default function Earth({
   }, []);
 
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("mode") === "demo") {
-      setEvents([]);
-      return;
-    }
+    if (new URLSearchParams(window.location.search).get("mode") === "demo") return;
     let disposed = false;
     const refresh = async () => {
       try {
