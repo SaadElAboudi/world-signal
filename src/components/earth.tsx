@@ -29,6 +29,10 @@ type MapPoint =
   | { kind: "signal"; id: string; latitude: number; longitude: number; severity: WorldSignal["severity"]; signal: WorldSignal }
   | { kind: "event"; id: string; latitude: number; longitude: number; severity: WorldEvent["severity"]; event: WorldEvent };
 
+function markerColor(severity: MapPoint["severity"]) {
+  return severity === "info" ? "#6f8792" : SEVERITY_COLOR[severity];
+}
+
 export default function Earth({
   signals,
   selected,
@@ -236,7 +240,7 @@ export default function Earth({
           if (point.kind === "signal" && point.id === selected?.id) return 0.7;
           return point.kind === "event" ? 0.52 : 0.45;
         }}
-        pointColor={(d) => SEVERITY_COLOR[(d as MapPoint).severity]}
+        pointColor={(d) => markerColor((d as MapPoint).severity)}
         pointLabel={(d) => {
           const point = d as MapPoint;
           return point.kind === "signal"
@@ -260,7 +264,7 @@ export default function Earth({
         ringLat="latitude"
         ringLng="longitude"
         ringAltitude={0.018}
-        ringColor={(d: object) => SEVERITY_COLOR[(d as MapPoint).severity]}
+        ringColor={(d: object) => markerColor((d as MapPoint).severity)}
         ringMaxRadius={3.2}
         ringPropagationSpeed={0.7}
         ringRepeatPeriod={2400}
