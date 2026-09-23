@@ -9,7 +9,9 @@ import {
 } from "react";
 import Globe, { type GlobeMethods } from "react-globe.gl";
 import { SEVERITY_COLOR, type WorldSignal } from "@/core/types";
+import type { WorldEvent } from "@/events/types";
 import { Icon } from "./icon";
+
 const motionQuery = "(prefers-reduced-motion: reduce)";
 function subscribeMotion(callback: () => void) {
   const media = window.matchMedia(motionQuery);
@@ -17,10 +19,30 @@ function subscribeMotion(callback: () => void) {
   return () => media.removeEventListener("change", callback);
 }
 const getMotionPreference = () => window.matchMedia(motionQuery).matches;
+
 interface Country {
   properties: { ADMIN: string };
   geometry: { type: string; coordinates: number[][][] };
 }
+
+type GlobePoint =
+  | {
+      kind: "signal";
+      id: string;
+      latitude: number;
+      longitude: number;
+      severity: WorldSignal["severity"];
+      signal: WorldSignal;
+    }
+  | {
+      kind: "event";
+      id: string;
+      latitude: number;
+      longitude: number;
+      severity: WorldEvent["severity"];
+      event: WorldEvent;
+    };
+
 export default function Earth({
   signals,
   selected,
@@ -49,6 +71,8 @@ export default function Earth({
   const globe = useRef<GlobeMethods | undefined>(undefined);
   const [size, setSize] = useState({ width: 800, height: 700 });
   const [countries, setCountries] = useState<Country[]>([]);
+  const [events, setEvents] = useState<WorldEvent[]>([]);
+  const [selectedEvent, setSelectedEvent] = useState<WorldEvent | null>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [rotating, setRotating] = useState(false);
@@ -57,6 +81,28 @@ export default function Earth({
     getMotionPreference,
     () => true,
   );
+  const points = useMemo<GlobePoint[]>(
+    () => [
+      ...signals.map((signal) => ({
+        kind: "signal" as const,
+        id: signal.id,
+        latitude: signal.latitude,
+        longitude: signal.longitude,
+        severity: signal.severity,
+        signal,
+      })),
+      ...events.map((event) => ({
+        kind: "event" as const,
+        id: event.id,
+        latitude: event.location.latitude,
+        longitude: event.location.longitude,
+        severity: event.severity,
+        event,
+      })),
+    ],
+    [signals, events],
+  );
+
   useEffect(() => {
     const observer = new ResizeObserver(([entry]) =>
       setSize({
@@ -67,19 +113,47 @@ export default function Earth({
     if (container.current) observer.observe(container.current);
     const abort = new AbortController();
     fetch("/geo/countries.geojson", { signal: abort.signal })
-      .then((r) => {
-        if (!r.ok) throw new Error("Map unavailable");
-        return r.json();
+      .then((response) => {
+        if (!response.ok) throw new Error("Map unavailable");
+        return response.json();
       })
       .then((data) => setCountries(data.features))
-      .catch((e) => {
-        if (e.name !== "AbortError") setFailed(true);
+      .catch((error) => {
+        if (error.name !== "AbortError") setFailed(true);
       });
     return () => {
       observer.disconnect();
       abort.abort();
     };
   }, []);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("mode") === "demo") {
+      setEvents([]);
+      return;
+    }
+    let disposed = false;
+    const refresh = async () => {
+      try {
+        const response = await fetch("/api/events?status=active&limit=300", {
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        const next = Array.isArray(data.events) ? data.events : Array.isArray(data) ? data : [];
+        if (!disposed) setEvents(next);
+      } catch {
+        // Universal events are additive; existing signals remain usable when this layer is unavailable.
+      }
+    };
+    void refresh();
+    const interval = window.setInterval(refresh, 60_000);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+    };
+  }, []);
+
   useEffect(() => {
     if (!ready || !selected) return;
     globe.current?.pointOfView(
@@ -100,30 +174,42 @@ export default function Earth({
     document.addEventListener("visibilitychange", visibility);
     return () => document.removeEventListener("visibilitychange", visibility);
   }, []);
+
   const onReady = useCallback(() => {
     if (!globe.current) return;
     globe.current.pointOfView({ lat: 23, lng: 43, altitude: 2.05 });
-    globe.current
-      .renderer()
-      .setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    globe.current.renderer().setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     globe.current.controls().minDistance = 145;
     globe.current.controls().maxDistance = 500;
     globe.current.controls().enablePan = false;
     setReady(true);
   }, []);
   const zoom = (factor: number) => {
-    const g = globe.current;
-    if (g)
-      g.pointOfView(
+    const current = globe.current;
+    if (current)
+      current.pointOfView(
         {
           altitude: Math.max(
             0.5,
-            Math.min(3.8, g.pointOfView().altitude * factor),
+            Math.min(3.8, current.pointOfView().altitude * factor),
           ),
         },
         reducedMotion ? 0 : 400,
       );
   };
+  const selectPoint = (point: GlobePoint) => {
+    if (point.kind === "signal") {
+      setSelectedEvent(null);
+      onSelect(point.signal);
+      return;
+    }
+    setSelectedEvent(point.event);
+    globe.current?.pointOfView(
+      { lat: point.latitude, lng: point.longitude, altitude: 1.85 },
+      reducedMotion ? 0 : 900,
+    );
+  };
+
   return (
     <div className="earth-canvas" ref={container} data-testid="earth">
       <Globe
@@ -137,33 +223,38 @@ export default function Earth({
         showGraticules
         polygonsData={countries}
         polygonAltitude={0.002}
-        polygonCapColor={(d) =>
-          (d as Country).properties.ADMIN === country
+        polygonCapColor={(datum) =>
+          (datum as Country).properties.ADMIN === country
             ? "rgba(98,215,183,0.24)"
             : "rgba(29,65,71,0.16)"
         }
         polygonSideColor={() => "rgba(0,0,0,0)"}
         polygonStrokeColor={() => "#345558"}
-        polygonLabel={(d) => (d as Country).properties.ADMIN}
-        onPolygonClick={(d) => onCountry((d as Country).properties.ADMIN)}
-        pointsData={signals}
+        polygonLabel={(datum) => (datum as Country).properties.ADMIN}
+        onPolygonClick={(datum) => onCountry((datum as Country).properties.ADMIN)}
+        pointsData={points}
         pointLat="latitude"
         pointLng="longitude"
-        pointAltitude={0.008}
-        pointRadius={(d) =>
-          (d as WorldSignal).id === selected?.id ? 0.7 : 0.45
-        }
-        pointColor={(d) => SEVERITY_COLOR[(d as WorldSignal).severity]}
-        pointLabel={(d) =>
-          `${(d as WorldSignal).country} · ${(d as WorldSignal).title} (${(d as WorldSignal).provenance === "synthetic" ? "demo" : "observed"})`
-        }
-        onPointClick={(d) => onSelect(d as WorldSignal)}
+        pointAltitude={(datum) => ((datum as GlobePoint).kind === "event" ? 0.014 : 0.008)}
+        pointRadius={(datum) => {
+          const point = datum as GlobePoint;
+          if (point.kind === "event") return selectedEvent?.id === point.id ? 0.65 : 0.32;
+          return point.id === selected?.id ? 0.7 : 0.45;
+        }}
+        pointColor={(datum) => SEVERITY_COLOR[(datum as GlobePoint).severity]}
+        pointLabel={(datum) => {
+          const point = datum as GlobePoint;
+          return point.kind === "signal"
+            ? `${point.signal.country} · ${point.signal.title} (${point.signal.provenance === "synthetic" ? "demo" : "observed"})`
+            : `${point.event.category.replaceAll("_", " ")} · ${point.event.title}`;
+        }}
+        onPointClick={(datum) => selectPoint(datum as GlobePoint)}
         pointsTransitionDuration={reducedMotion ? 0 : 400}
         ringsData={reducedMotion ? [] : labelSignals}
         ringLat="latitude"
         ringLng="longitude"
         ringAltitude={0.018}
-        ringColor={(d: object) => SEVERITY_COLOR[(d as WorldSignal).severity]}
+        ringColor={(datum: object) => SEVERITY_COLOR[(datum as WorldSignal).severity]}
         ringMaxRadius={3.2}
         ringPropagationSpeed={0.7}
         ringRepeatPeriod={2400}
@@ -171,17 +262,18 @@ export default function Earth({
         labelLat="latitude"
         labelLng="longitude"
         labelAltitude={0.035}
-        labelText={(d) =>
-          (d as WorldSignal).country === "United States of America"
+        labelText={(datum) =>
+          (datum as WorldSignal).country === "United States of America"
             ? "UNITED STATES"
-            : (d as WorldSignal).country.toUpperCase()
+            : (datum as WorldSignal).country.toUpperCase()
         }
         labelSize={0.9}
-        labelColor={() => "#b7c8cb"}
+        labelColor={() => "#b7c8cb"
+        }
         labelDotRadius={0}
         labelDotOrientation={() => "bottom"}
         labelResolution={2}
-        onLabelClick={(d) => onSelect(d as WorldSignal)}
+        onLabelClick={(datum) => onSelect(datum as WorldSignal)}
         onGlobeReady={onReady}
       />
       {!ready && (
@@ -194,6 +286,23 @@ export default function Earth({
         <p className="map-warning">
           Country boundaries unavailable. Explore signals in the feed.
         </p>
+      )}
+      {selectedEvent && (
+        <article className="event-map-card" data-severity={selectedEvent.severity}>
+          <button
+            type="button"
+            aria-label="Close world event"
+            onClick={() => setSelectedEvent(null)}
+          >
+            <Icon name="close" size={14} />
+          </button>
+          <small>{selectedEvent.category.replaceAll("_", " ")}</small>
+          <strong>{selectedEvent.title}</strong>
+          <span>{selectedEvent.description}</span>
+          <a href={selectedEvent.source.url} target="_blank" rel="noreferrer">
+            {selectedEvent.source.name} <Icon name="arrow" size={12} />
+          </a>
+        </article>
       )}
       <div className="globe-controls">
         <button aria-label="Zoom in" onClick={() => zoom(0.8)}>
@@ -218,7 +327,7 @@ export default function Earth({
           aria-label={rotating ? "Pause globe rotation" : "Rotate globe"}
           aria-pressed={rotating}
           disabled={reducedMotion}
-          onClick={() => setRotating((r) => !r)}
+          onClick={() => setRotating((value) => !value)}
         >
           <Icon name={rotating ? "pause" : "play"} size={15} />
         </button>
