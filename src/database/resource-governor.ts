@@ -34,7 +34,9 @@ export async function getStorageBudgetState(): Promise<StorageBudgetState> {
   const result = await getPool().query(
     "SELECT pg_database_size(current_database())::bigint AS bytes",
   );
-  const bytes = Number(result.rows[0]?.bytes ?? 0);
+  const bytes = Number(result.rows[0]?.bytes);
+  if (!Number.isFinite(bytes) || bytes <= 0)
+    throw new Error("Storage usage unavailable");
   const ratio = quotaBytes > 0 ? bytes / quotaBytes : 0;
   const pressure: StoragePressure =
     ratio >= 0.82

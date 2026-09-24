@@ -55,8 +55,7 @@ export async function refreshSignalInvestigation(
 ) {
   const now = options.now ?? new Date();
   if (!options.providers) {
-    // One GDELT + one GDACS request in the default investigation path.
-    const guard = await collectionGuard("context", 2, { now });
+    const guard = await collectionGuard("context", { now });
     if (!guard.allowed)
       return getPersistedInvestigation("signal", id, { allowStale: true, now });
   }
@@ -103,7 +102,7 @@ export async function getCorrelatedEventInvestigation(
     if (cached) return cached;
   }
 
-  const guard = await collectionGuard("context", 2, { now });
+  const guard = await collectionGuard("context", { now });
   if (!guard.allowed) {
     const stale = await getPersistedInvestigation(
       "correlated_event",

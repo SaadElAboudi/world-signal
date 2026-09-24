@@ -161,9 +161,7 @@ export async function computeAviationSignals(now = new Date()) {
 export async function refreshAviation(now = new Date()) {
   if (process.env.ADSB_LOL_ENABLED === "false")
     return { status: "disabled" as const, regions: 0, signals: 0 };
-  // One request per configured sentinel region; current v1 network contains 20 regions.
-  const guard = await collectionGuard("adsblol", 20, {
-    storageSensitive: true,
+  const guard = await collectionGuard("adsblol", {
     now,
   });
   if (!guard.allowed) {

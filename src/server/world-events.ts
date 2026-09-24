@@ -45,12 +45,8 @@ function emptyResult(
   } as const;
 }
 
-async function withinBudget(
-  provider: BudgetedProvider,
-  calls: number,
-  now?: Date,
-) {
-  const guard = await collectionGuard(provider, calls, { now });
+async function withinBudget(provider: BudgetedProvider, now?: Date) {
+  const guard = await collectionGuard(provider, { now });
   return guard.allowed ? null : emptyResult(provider, "budget_limited");
 }
 
@@ -95,7 +91,7 @@ async function refreshProvider(
 }
 
 export async function refreshEonetWorldEvents(options: RefreshOptions = {}) {
-  const limited = await withinBudget("eonet", 1, options.now);
+  const limited = await withinBudget("eonet", options.now);
   if (limited) return limited;
   return refreshProvider(new EonetEventProvider(), options);
 }
@@ -103,8 +99,7 @@ export async function refreshEonetWorldEvents(options: RefreshOptions = {}) {
 export async function refreshWeatherWorldEvents(options: RefreshOptions = {}) {
   if (process.env.OPEN_METEO_ENABLED !== "true")
     return emptyResult("open-meteo", "disabled");
-  // Seven H3-r0 forecast batches + at most two bounded archive cache misses.
-  const limited = await withinBudget("open-meteo", 9, options.now);
+  const limited = await withinBudget("open-meteo", options.now);
   if (limited) return limited;
   const endpoint = process.env.OPEN_METEO_ENDPOINT || undefined;
   const archiveEndpoint = process.env.OPEN_METEO_ARCHIVE_ENDPOINT || undefined;
@@ -124,8 +119,7 @@ export async function refreshWeatherWorldEvents(options: RefreshOptions = {}) {
 export async function refreshMarineWorldEvents(options: RefreshOptions = {}) {
   if (process.env.OPEN_METEO_MARINE_ENABLED === "false")
     return emptyResult("open-meteo-marine", "disabled");
-  // 24 sentinels / default 12-coordinate batches = two requests.
-  const limited = await withinBudget("open-meteo", 2, options.now);
+  const limited = await withinBudget("open-meteo", options.now);
   if (limited) return { ...limited, provider: "open-meteo-marine" };
   const endpoint = process.env.OPEN_METEO_MARINE_ENDPOINT || undefined;
   const apiKey = process.env.OPEN_METEO_API_KEY || undefined;
@@ -139,7 +133,7 @@ export async function refreshMarineWorldEvents(options: RefreshOptions = {}) {
 export async function refreshInternetWorldEvents(options: RefreshOptions = {}) {
   if (process.env.IODA_ENABLED === "false")
     return emptyResult("ioda", "disabled");
-  const limited = await withinBudget("ioda", 1, options.now);
+  const limited = await withinBudget("ioda", options.now);
   if (limited) return limited;
   const endpoint = process.env.IODA_ENDPOINT || undefined;
   return refreshProvider(new IodaInternetOutageProvider({ endpoint }), {

@@ -56,8 +56,7 @@ export async function reserveProviderCalls(
 
 export async function collectionGuard(
   provider: BudgetedProvider,
-  _requestedCalls: number,
-  options: { storageSensitive?: boolean; now?: Date } = {},
+  options: { now?: Date } = {},
 ) {
   const now = options.now ?? new Date();
   const storage = await getStorageBudgetState();

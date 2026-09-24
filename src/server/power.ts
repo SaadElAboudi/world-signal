@@ -8,7 +8,6 @@ import {
 import type { EventSeverity, WorldEvent } from "../events/types";
 import {
   EntsoeActualLoadProvider,
-  ENTSOE_REGIONS,
   type PowerLoadObservation,
 } from "../providers/entsoe";
 import { getConfig } from "./config";
@@ -140,8 +139,7 @@ export async function refreshPowerGrid(now = new Date()) {
       reason: "missing_token" as const,
     };
 
-  const guard = await collectionGuard("entsoe", ENTSOE_REGIONS.length, {
-    storageSensitive: true,
+  const guard = await collectionGuard("entsoe", {
     now,
   });
   if (!guard.allowed)

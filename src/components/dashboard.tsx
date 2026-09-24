@@ -332,6 +332,7 @@ export default function Dashboard({
         <div className="header-actions">
           <LanguageSwitch />
           <button
+            aria-label={statusLabel}
             className={`demo-badge ${!demo && snapshot.status === "live" ? "live-badge" : ""}`}
             onClick={() => dialog.current?.showModal()}
           >
@@ -1132,8 +1133,22 @@ export default function Dashboard({
                     )}
                     {provider.error && (
                       <p>
-                        {t("State:")}
-                        {t(provider.error.replaceAll("_", " "))}
+                        {t("State:")}{" "}
+                        {t(
+                          (
+                            {
+                              upstream_http_429:
+                                "Provider rate limit; collection is paused.",
+                              provider_cooldown:
+                                "Provider rate limit; collection is paused.",
+                              api_budget_exhausted:
+                                "API budget reached; collection is paused.",
+                              storage_budget_exhausted:
+                                "Storage budget reached; collection is paused.",
+                            } as Record<string, string>
+                          )[provider.error] ??
+                            provider.error.replaceAll("_", " "),
+                        )}
                       </p>
                     )}
                   </div>
