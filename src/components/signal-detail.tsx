@@ -1,92 +1,202 @@
 "use client";
-import { useState } from "react";
+import { useI18n } from "@/i18n/context";
+import { InvestigationPanel } from "./investigation-panel";
 import { LAYERS, type WorldSignal } from "@/core/types";
-import type { Investigation } from "@/context/investigation";
 import { confidenceLabel, deviationLabel } from "@/core/analysis";
 import { EvidenceChart } from "./evidence-chart";
 import { Icon } from "./icon";
-
-type ContextState = "idle" | "loading" | "ready" | "error";
-type ContextView = {
-  signalId: string;
-  open: boolean;
-  state: ContextState;
-  investigation: Investigation | null;
-};
-const EMPTY_CONTEXT: ContextView = { signalId: "", open: false, state: "idle", investigation: null };
-
-export function SignalDetail({ signal, onClose }: { signal: WorldSignal; onClose: () => void }) {
-  const [contextView, setContextView] = useState<ContextView>(EMPTY_CONTEXT);
-  const activeContext = contextView.signalId === signal.id ? contextView : EMPTY_CONTEXT;
+export function SignalDetail({
+  signal,
+  onClose,
+}: {
+  signal: WorldSignal;
+  onClose: () => void;
+}) {
+  const { t, locale, countryName } = useI18n();
   const demo = signal.provenance === "synthetic";
   const event = signal.kind === "earthquake-event";
-
-  async function toggleContext() {
-    if (activeContext.open) {
-      setContextView({ ...activeContext, signalId: signal.id, open: false });
-      return;
-    }
-    if (activeContext.investigation) {
-      setContextView({ ...activeContext, signalId: signal.id, open: true });
-      return;
-    }
-    setContextView({ signalId: signal.id, open: true, state: "loading", investigation: null });
-    try {
-      const response = await fetch(
-        `/api/signals/${encodeURIComponent(signal.id)}/context?mode=${demo ? "demo" : "live"}`,
-        { cache: "no-store" },
-      );
-      if (!response.ok) throw new Error(`Context request failed: ${response.status}`);
-      const investigation = (await response.json()) as Investigation;
-      setContextView({ signalId: signal.id, open: true, state: "ready", investigation });
-    } catch {
-      setContextView({ signalId: signal.id, open: true, state: "error", investigation: null });
-    }
-  }
-
   return (
-    <section className="signal-detail" aria-label="Signal details"><div className="panel-heading"><span>SIGNAL INTELLIGENCE</span><button className="icon-button" aria-label="Close signal details" onClick={onClose}><Icon name="close" /></button></div><div className="detail-scroll">
-      <div className="detail-type"><Icon name={signal.type} />{LAYERS.find((l) => l.id === signal.type)?.name}<span className="demo-mini">{demo ? "SIMULATED" : event ? "OBSERVED EVENT" : "STATISTICAL ANOMALY"}</span></div>
-      <h2>{signal.country === "United States of America" ? "United States" : signal.country}</h2><p className="region">{signal.region}</p><span className={`severity ${signal.severity}`}><i />{signal.severity}</span>
-      <div className="big-measure">{deviationLabel(signal)}<span>{signal.baselineLabel ?? "vs. 30-day reference"}</span></div>
-      <div className="metric-pair"><div><span>{demo ? "OBSERVED · DEMO" : "OBSERVED"}</span><strong>{signal.observedValue.toLocaleString("en-US")}</strong><small>{signal.unit}</small></div><div><span>{demo ? "EXPECTED · DEMO" : "REFERENCE MEAN"}</span><strong>{signal.expectedValue === null ? "N/A" : signal.expectedValue.toFixed(demo ? 0 : 2)}</strong><small>{signal.expectedValue === null ? "event threshold" : "per comparable window"}</small></div></div>
-      {signal.magnitude !== undefined && <div className="quake-meta"><span>Magnitude <b>{signal.magnitude.toFixed(1)}</b></span><span>Depth <b>{signal.depth === undefined ? "Unavailable" : `${signal.depth} km`}</b></span></div>}
-      <div className="detail-section"><h3>What changed</h3><p>{signal.description}</p></div>
-      <div className="detail-section"><div className="section-title"><h3>The evidence</h3><span>{demo ? "30D REFERENCE" : event ? "THRESHOLD SELECTION" : `${signal.baseline.length} REFERENCE WINDOWS`}</span></div><EvidenceChart signal={signal} /></div>
-      <button className="explain-button" onClick={toggleContext} aria-expanded={activeContext.open}><Icon name="info" />{activeContext.open ? "Hide investigation" : "Investigate context"}<Icon name="arrow" size={16} /></button>
-      {activeContext.open && <div className="context-investigation" aria-live="polite"><div className="context-editorial"><span>EDITORIAL CONTEXT · NOT RETRIEVED EVIDENCE</span><p>{signal.context}</p></div>
-        {activeContext.state === "loading" && <div className="context-state context-state--loading"><span>SEARCHING CONTEXT</span><strong>Looking for evidence around this observation…</strong></div>}
-        {activeContext.state === "error" && <div className="context-state context-state--error"><span>CONTEXT TEMPORARILY UNAVAILABLE</span><strong>The observation remains valid; external context could not be loaded.</strong></div>}
-        {activeContext.state === "ready" && activeContext.investigation && <InvestigationPanel investigation={activeContext.investigation} demo={demo} />}
-      </div>}
-      {!demo && <div className="detail-section source-section"><h3>Data confidence · {confidenceLabel(signal.confidence)}</h3><p>{signal.evidence?.confidenceMethod}</p><p>Status: {signal.status ?? "active"}. Confidence describes data quality, not danger.</p></div>}
-      {!demo && signal.evidence && <div className="detail-section source-section"><h3>Observation window</h3><p>{event ? "Individual catalogue event" : `${signal.evidence.observationWindowHours} hours ending ${new Date(signal.evidence.windowEnd).toLocaleString("en-GB", { timeZone: "UTC" })} UTC`}</p>{signal.evidence.frpMw !== undefined && <p>FRP sum: {signal.evidence.frpMw === null ? "Unavailable" : `${signal.evidence.frpMw.toFixed(1)} MW across ${signal.evidence.frpSampleCount} detections`}. Repeated overpasses are included; this is not total fire energy.</p>}</div>}
-      <details className="method-details"><summary>Methodology & limitations</summary><p>{signal.methodology}</p><p>{signal.limitation}</p></details>
-      <div className="detail-section source-section"><h3>{demo ? "Reference source" : "Original data source"}</h3><a href={signal.source.url} target="_blank" rel="noreferrer">{signal.source.name}<Icon name="external" size={14} /></a><p>{demo ? "Provider documentation, not evidence of a real event." : `Source updated: ${signal.sourceAsOf ? new Date(signal.sourceAsOf).toLocaleString("en-GB", { timeZone: "UTC" }) + " UTC" : "Unavailable"}`}</p></div>
-      <div className="timestamp"><span>{demo ? "SCENARIO TIMESTAMP" : "LAST OBSERVATION"}</span><time dateTime={signal.timestamp}>{new Date(signal.timestamp).toLocaleString("en-GB", { timeZone: "UTC", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} UTC</time></div>
-    </div></section>
+    <section className="signal-detail" aria-label={t("Signal details")}>
+      <div className="panel-heading">
+        <span>{t("SIGNAL INTELLIGENCE")}</span>
+        <button
+          className="icon-button"
+          aria-label={t("Close signal details")}
+          onClick={onClose}
+        >
+          <Icon name="close" />
+        </button>
+      </div>
+      <div className="detail-scroll">
+        <div className="detail-type">
+          <Icon name={signal.type} />
+          {t(LAYERS.find((l) => l.id === signal.type)?.name ?? "")}
+          <span className="demo-mini">
+            {demo
+              ? t("SIMULATED")
+              : event
+                ? t("OBSERVED EVENT")
+                : t("STATISTICAL ANOMALY")}
+          </span>
+        </div>
+        <h2>{countryName(signal.country)}</h2>
+        <p className="region">{signal.region}</p>
+        <span className={`severity ${signal.severity}`}>
+          <i />
+          {t(signal.severity)}
+        </span>
+        <div className="big-measure">
+          {deviationLabel(signal)}
+          <span>{t(signal.baselineLabel ?? "vs. 30-day reference")}</span>
+        </div>
+        <div className="metric-pair">
+          <div>
+            <span>{demo ? t("OBSERVED · DEMO") : t("OBSERVED")}</span>
+            <strong>
+              {signal.observedValue.toLocaleString(
+                locale === "fr" ? "fr-FR" : "en-US",
+              )}
+            </strong>
+            <small>{signal.unit}</small>
+          </div>
+          <div>
+            <span>{demo ? t("EXPECTED · DEMO") : t("REFERENCE MEAN")}</span>
+            <strong>
+              {signal.expectedValue === null
+                ? "N/A"
+                : signal.expectedValue.toFixed(demo ? 0 : 2)}
+            </strong>
+            <small>
+              {signal.expectedValue === null
+                ? t("event threshold")
+                : t("per comparable window")}
+            </small>
+          </div>
+        </div>
+        {signal.magnitude !== undefined && (
+          <div className="quake-meta">
+            <span>
+              {t("Magnitude")}
+              <b>{signal.magnitude.toFixed(1)}</b>
+            </span>
+            <span>
+              {t("Depth")}{" "}
+              <b>
+                {signal.depth === undefined
+                  ? "Unavailable"
+                  : `${signal.depth} km`}
+              </b>
+            </span>
+          </div>
+        )}
+        <div className="detail-section">
+          <h3>{t("What changed")}</h3>
+          <p>
+            {locale === "fr"
+              ? event
+                ? `Séisme de magnitude ${signal.magnitude?.toLocaleString("fr-FR") ?? signal.observedValue.toLocaleString("fr-FR")}, enregistré par ${signal.source.name}. Il s’agit d’un événement observé, sans estimation de danger.`
+                : `${signal.observedValue.toLocaleString("fr-FR")} ${signal.type === "wildfire" ? "détections thermiques" : signal.type === "aviation" ? "aéronefs observés" : signal.type === "earthquake" ? "séismes observés" : "unités de la mesure de connectivité"}, pour une référence de ${signal.expectedValue?.toLocaleString("fr-FR", { maximumFractionDigits: 2 }) ?? "valeur indisponible"} sur des périodes comparables. Cet écart décrit une observation et ne permet pas d’en déduire la cause.`
+              : signal.description}
+          </p>
+        </div>
+        <div className="detail-section">
+          <div className="section-title">
+            <h3>{t("The evidence")}</h3>
+            <span>
+              {demo
+                ? t("30D REFERENCE")
+                : event
+                  ? t("THRESHOLD SELECTION")
+                  : t(`${signal.baseline.length} REFERENCE WINDOWS`)}
+            </span>
+          </div>
+          <EvidenceChart signal={signal} />
+        </div>
+        <InvestigationPanel key={signal.id} signal={signal} />
+        {!demo && (
+          <div className="detail-section source-section">
+            <h3>
+              {t("Data confidence ·")} {t(confidenceLabel(signal.confidence))}
+            </h3>
+            <p>
+              {locale === "fr"
+                ? "La confiance dépend de la couverture de la source et de la quantité de données comparables. Elle ne mesure ni le danger ni la probabilité d’une cause. Le calcul détaillé figure dans la méthodologie de la source ci-dessous."
+                : signal.evidence?.confidenceMethod}
+            </p>
+            <p>
+              {t("Status:")}
+              {t(signal.status ?? "active")}
+              {t(". Confidence describes data quality, not danger.")}
+            </p>
+          </div>
+        )}
+        {!demo && signal.evidence && (
+          <div className="detail-section source-section">
+            <h3>{t("Observation window")}</h3>
+            <p>
+              {event
+                ? t("Individual catalogue event")
+                : `${signal.evidence.observationWindowHours} ${locale === "fr" ? "heures, jusqu’au" : "hours ending"} ${new Date(signal.evidence.windowEnd).toLocaleString(locale === "fr" ? "fr-FR" : "en-GB", { timeZone: "UTC" })} UTC`}
+            </p>
+            {signal.evidence.frpMw !== undefined && (
+              <p>
+                {t("FRP sum:")}{" "}
+                {signal.evidence.frpMw === null
+                  ? "Unavailable"
+                  : `${signal.evidence.frpMw.toFixed(1)} MW across ${signal.evidence.frpSampleCount} detections`}
+                {t(
+                  ". Repeated overpasses are included; this is not total fire energy.",
+                )}
+              </p>
+            )}
+          </div>
+        )}
+        <details className="method-details">
+          <summary>{t("Methodology & limitations")}</summary>
+          {locale === "fr" && (
+            <p>
+              Les observations sont comparées à des périodes historiques
+              comparables lorsqu’une référence suffisante existe. Les données
+              manquantes ne sont pas interprétées comme un retour à la normale.
+              Les méthodes détaillées et limites propres à ce signal sont
+              conservées en anglais ci-dessous.
+            </p>
+          )}
+          <p lang="en">{signal.methodology}</p>
+          <p lang="en">{signal.limitation}</p>
+          {locale === "fr" && (
+            <p lang="en">{signal.evidence?.confidenceMethod}</p>
+          )}
+        </details>
+        <div className="detail-section source-section">
+          <h3>{demo ? t("Reference source") : t("Original data source")}</h3>
+          <a href={signal.source.url} target="_blank" rel="noreferrer">
+            {signal.source.name}
+            <Icon name="external" size={14} />
+          </a>
+          <p>
+            {demo
+              ? t("Provider documentation, not evidence of a real event.")
+              : `${locale === "fr" ? "Source mise à jour :" : "Source updated:"} ${signal.sourceAsOf ? new Date(signal.sourceAsOf).toLocaleString(locale === "fr" ? "fr-FR" : "en-GB", { timeZone: "UTC" }) + " UTC" : "Unavailable"}`}
+          </p>
+        </div>
+        <div className="timestamp">
+          <span>{demo ? t("SCENARIO TIMESTAMP") : t("LAST OBSERVATION")}</span>
+          <time dateTime={signal.timestamp}>
+            {new Date(signal.timestamp).toLocaleString(
+              locale === "fr" ? "fr-FR" : "en-GB",
+              {
+                timeZone: "UTC",
+                day: "2-digit",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+              },
+            )}{" "}
+            UTC
+          </time>
+        </div>
+      </div>
+    </section>
   );
-}
-
-function assessmentLabel(investigation: Investigation) {
-  if (investigation.assessment === "independently_corroborated") return "INDEPENDENTLY CORROBORATED";
-  if (investigation.assessment === "official_report_found") return "OFFICIAL REPORT FOUND";
-  if (investigation.assessment === "reported") return "POSSIBLE CONTEXT FOUND";
-  return null;
-}
-
-function InvestigationPanel({ investigation, demo }: { investigation: Investigation; demo: boolean }) {
-  const corroboration = assessmentLabel(investigation);
-  return <>
-    <div className={`context-state ${investigation.status === "context_found" ? "context-state--found" : investigation.status === "context_unavailable" ? "context-state--error" : "context-state--unknown"}`}>
-      <span>{corroboration ?? (investigation.status === "context_unavailable" ? "CONTEXT SOURCES UNAVAILABLE" : "NO EXPLANATION FOUND YET")}</span>
-      <strong>{investigation.status === "context_found" ? `${investigation.evidence.length} relevant source${investigation.evidence.length === 1 ? "" : "s"} matched the event window.` : investigation.status === "context_unavailable" ? "The configured context sources could not be searched." : demo ? "External retrieval is intentionally disabled in demo mode." : "No sufficiently relevant external evidence was retrieved from the available sources."}</strong>
-      <p>Retrieval: {investigation.retrievalStatus.replace("_", " ")}. Context is evidence around the anomaly, not proof of cause.</p>
-      <p>Contextual support: <b>{investigation.explanationConfidence.level.toUpperCase()}</b>{investigation.explanationConfidence.level !== "none" ? ` · ${Math.round(investigation.explanationConfidence.score * 100)}%` : ""}. {investigation.explanationConfidence.rationale}</p>
-    </div>
-    {investigation.evidence.length > 0 && <div className="context-evidence-list" aria-label="Context evidence">{investigation.evidence.map((item) => <a className="context-evidence" href={item.source.url} target="_blank" rel="noreferrer" key={item.id}><div className="context-evidence__meta"><strong>{item.source.name}</strong><time dateTime={item.publishedAt}>{new Date(item.publishedAt).toLocaleTimeString("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit" })} UTC</time></div><p>{item.text}</p><small>Relevance {Math.round(item.score * 100)} · topic {Math.round(item.scoreBreakdown.topical * 100)} · external source ↗</small></a>)}</div>}
-    <div className="context-timeline" aria-label="Investigation timeline"><span>INVESTIGATION TIMELINE</span><ol>{investigation.timeline.map((entry, index) => <li key={`${entry.kind}-${entry.timestamp}-${entry.signalId ?? entry.evidenceId ?? index}`}><time dateTime={entry.timestamp}>{new Date(entry.timestamp).toLocaleTimeString("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit" })}</time><i data-kind={entry.kind} /><div><strong>{entry.kind === "signal" ? "Anomaly detected" : "Context published"}</strong><small>{entry.sourceName ?? entry.label}</small></div></li>)}</ol></div>
-    {investigation.providers.length > 0 && <div className="context-provider-health" aria-label="Context source health">{investigation.providers.map((provider) => <span key={provider.providerId} data-status={provider.status}>{provider.providerId} · {provider.status}</span>)}</div>}
-    <details className="context-unknowns"><summary>What remains unknown</summary><ul>{investigation.unknowns.map((item) => <li key={item}>{item}</li>)}</ul></details>
-  </>;
 }

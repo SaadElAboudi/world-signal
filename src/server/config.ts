@@ -30,6 +30,11 @@ export function getConfig() {
     throw new Error("FIRMS_TRANSPORT must be public or api");
   return {
     mode: mode as "demo" | "live",
+    internetCountries: process.env.INTERNET_COUNTRIES,
+    internetIntervalMinutes: numberEnv("INTERNET_INTERVAL_MINUTES", 60, 60),
+    aviationIntervalMinutes: numberEnv("AVIATION_INTERVAL_MINUTES", 60, 60),
+    internetStaleMinutes: numberEnv("INTERNET_STALE_MINUTES", 180, 60),
+    aviationStaleMinutes: numberEnv("AVIATION_STALE_MINUTES", 45, 15),
     databaseUrl: process.env.DATABASE_URL,
     databaseSslCa: process.env.DATABASE_SSL_CA,
     databasePoolMax: numberEnv("DATABASE_POOL_MAX", 5, 2, 20),
@@ -55,7 +60,7 @@ export function getConfig() {
     firmsKey: process.env.NASA_FIRMS_API_KEY,
     usgsIntervalMinutes: numberEnv("USGS_INTERVAL_MINUTES", 5, 5),
     firmsIntervalMinutes: numberEnv("FIRMS_INTERVAL_MINUTES", 60, 30),
-    adsbLolIntervalMinutes: numberEnv("ADSB_LOL_INTERVAL_MINUTES", 15, 10, 120),
+    adsbLolIntervalMinutes: numberEnv("ADSB_LOL_INTERVAL_MINUTES", 15, 10, 1440),
     usgsStaleMinutes: numberEnv("USGS_STALE_MINUTES", 20, 5),
     firmsStaleMinutes: numberEnv("FIRMS_STALE_MINUTES", 240, 30),
     adsbLolStaleMinutes: numberEnv("ADSB_LOL_STALE_MINUTES", 45, 15, 360),

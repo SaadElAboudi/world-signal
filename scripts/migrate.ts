@@ -16,6 +16,21 @@ export async function migrate() {
       .sort()) {
       const sql = await readFile(`src/database/migrations/${name}`, "utf8");
       const checksum = createHash("sha256").update(sql).digest("hex");
+      // The local phase-3 draft used 005 before GitHub allocated that number.
+      // Adopt only the byte-identical migration; never rerun its DDL or mask drift.
+      if (name === "008_correlations.sql") {
+        const legacy = await client.query(
+          "SELECT checksum FROM schema_migrations WHERE name='005_correlations.sql'",
+        );
+        if (legacy.rowCount) {
+          if (legacy.rows[0].checksum !== checksum)
+            throw new Error("Legacy correlation migration has changed");
+          await client.query(
+            "UPDATE schema_migrations SET name=$1 WHERE name='005_correlations.sql'",
+            [name],
+          );
+        }
+      }
       const existing = await client.query(
         "SELECT checksum FROM schema_migrations WHERE name=$1",
         [name],

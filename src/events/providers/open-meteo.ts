@@ -1,3 +1,4 @@
+import { createBudgetedFetch } from "../../server/budgeted-fetch";
 import { cellToLatLng, getRes0Cells } from "h3-js";
 import { fetchText } from "../../providers/http";
 import type { EventSeverity, EventType, WorldEvent } from "../types";
@@ -149,7 +150,7 @@ export class OpenMeteoExtremeWeatherProvider {
   private readonly batchSize: number;
 
   constructor(options: ProviderOptions = {}) {
-    this.fetcher = options.fetcher ?? fetch;
+    this.fetcher = options.fetcher ?? createBudgetedFetch("open-meteo");
     this.endpoint = options.endpoint ?? "https://api.open-meteo.com/v1/forecast";
     this.apiKey = options.apiKey;
     this.batchSize = Math.max(1, Math.min(50, options.batchSize ?? 20));

@@ -11,8 +11,13 @@ export function aviationDisruption(
     now,
     match: "hour-and-day-kind",
     minSamples: 7,
+    maxAgeMinutes: 45,
   });
-  if (!baseline.available || baseline.expected === null || baseline.deviation === null)
+  if (
+    !baseline.available ||
+    baseline.expected === null ||
+    baseline.deviation === null
+  )
     return null;
   if (baseline.expected < 5 || baseline.deviation > -40) return null;
 
@@ -70,18 +75,27 @@ export function aviationDisruption(
     evidence: {
       observationWindowHours: 0.25,
       windowStart: current.timestamp,
-      windowEnd: new Date(Date.parse(current.timestamp) + 15 * 60_000).toISOString(),
+      windowEnd: new Date(
+        Date.parse(current.timestamp) + 15 * 60_000,
+      ).toISOString(),
       baselineSamples: baseline.sampleCount,
       baselineTargetSamples: 35,
       baselineWindowHours: 0.25,
       baselineStart: reference[0]?.timestamp ?? null,
       baselineEnd: reference[reference.length - 1]?.timestamp ?? null,
-      ratio: baseline.expected > 0 ? (current.value ?? 0) / baseline.expected : null,
+      ratio:
+        baseline.expected > 0 ? (current.value ?? 0) / baseline.expected : null,
       zscore: baseline.zscore,
       observationCount: current.value ?? 0,
       observationIds: [current.id],
       cellId: current.cellId,
-      thresholds: { minimumReferenceAircraft: 5, notableDropPercent: 40, elevatedDropPercent: 60, significantDropPercent: 80, minimumMatchedDays: 7 },
+      thresholds: {
+        minimumReferenceAircraft: 5,
+        notableDropPercent: 40,
+        elevatedDropPercent: 60,
+        significantDropPercent: 80,
+        minimumMatchedDays: 7,
+      },
       confidenceMethod:
         "Confidence is capped at 0.55 for aviation because receiver coverage is incomplete and can vary independently of traffic. It reflects data support, not the probability or cause of a disruption.",
     },

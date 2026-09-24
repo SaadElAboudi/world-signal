@@ -28,7 +28,9 @@ test("ENTSO-E parser extracts the latest actual system load point", () => {
 
 test("ENTSO-E acknowledgement is treated as missing data, not zero load", () => {
   assert.equal(
-    parseEntsoeActualLoad("<Acknowledgement_MarketDocument><Reason><code>999</code></Reason></Acknowledgement_MarketDocument>"),
+    parseEntsoeActualLoad(
+      "<Acknowledgement_MarketDocument><Reason><code>999</code></Reason></Acknowledgement_MarketDocument>",
+    ),
     null,
   );
 });
@@ -43,7 +45,9 @@ test("ENTSO-E provider preserves partial regional coverage", async () => {
     const url = new URL(String(input));
     requested.push(url);
     if (url.searchParams.get("outBiddingZone_Domain") === "AREA-B")
-      return new Response("<Acknowledgement_MarketDocument />", { status: 200 });
+      return new Response("<Acknowledgement_MarketDocument />", {
+        status: 200,
+      });
     return new Response(xml, { status: 200 });
   };
   const provider = new EntsoeActualLoadProvider({
@@ -59,4 +63,25 @@ test("ENTSO-E provider preserves partial regional coverage", async () => {
   assert.equal(requested[0].searchParams.get("documentType"), "A65");
   assert.equal(requested[0].searchParams.get("processType"), "A16");
   assert.equal(requested[0].searchParams.get("securityToken"), "secret-token");
+});
+
+test("missing load cannot be interpreted as zero and conflicting revisions cannot double load", () => {
+  assert.equal(
+    parseEntsoeActualLoad(xml.replace(/<quantity>[^<]*<\/quantity>/g, "")),
+    null,
+  );
+  const duplicate = xml.replace(
+    "</GL_MarketDocument>",
+    xml.match(/<TimeSeries>[\s\S]*<\/TimeSeries>/)![0] + "</GL_MarketDocument>",
+  );
+  assert.equal(parseEntsoeActualLoad(duplicate)?.loadMw, 40500);
+  assert.equal(
+    parseEntsoeActualLoad(
+      duplicate.replace(
+        "<quantity>40500</quantity>",
+        "<quantity>100</quantity>",
+      ),
+    ),
+    null,
+  );
 });

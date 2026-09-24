@@ -4,7 +4,7 @@
 
 WORLD SIGNAL connects **USGS earthquakes, NASA FIRMS fire detections, NASA EONET natural events, Open-Meteo weather + ERA5 climatology, Open-Meteo Marine SST sentinels, IODA Internet outage events and ADSB.lol aviation sentinels** to PostgreSQL, deterministic analysis and an interactive globe. Live observations and the explicitly labeled synthetic demo remain separate.
 
-Phase 3 provides deterministic spatial/temporal correlation foundations. Phase 4 adds a deterministic **Context Engine** with GDELT news context and GDACS institutional evidence, ranked and deduplicated into an investigation timeline while preserving **NO EXPLANATION FOUND YET** and **CONTEXT SOURCES UNAVAILABLE**. Phase 5 introduces the additive **Universal Event Engine**: a provider-independent `WorldEvent` contract and compact current-state/history storage across hazards, climate, infrastructure and mobility. Phase 5B adds global weather sentinels, 5C live Internet outages, 5D regional aviation activity and 5E compact ERA5 climate references plus ocean SST rapid-warming sentinels. No LLM-generated briefing is currently used. External reporting is context, never automatic proof of causality. See [Phase 3 implementation status](docs/phase-3.md), [Phase 4 Context Engine](docs/phase-4.md) and [Phase 5 Universal Event Engine](docs/phase-5.md).
+Phase 3 provides operational Internet and aviation measurements, deterministic spatial/temporal correlation, linked globe evidence and a French/English interface. Phase 4 adds a deterministic **Context Engine** with GDELT news context and GDACS institutional evidence, ranked and deduplicated into an investigation timeline while preserving **NO EXPLANATION FOUND YET** and **CONTEXT SOURCES UNAVAILABLE**. Phase 5 introduces the additive **Universal Event Engine**: a provider-independent `WorldEvent` contract and compact current-state/history storage across hazards, climate, infrastructure and mobility. Phase 5B adds global weather sentinels, 5C live Internet outages, 5D regional aviation activity and 5E compact ERA5 climate references plus ocean SST rapid-warming sentinels. No LLM-generated briefing is currently used. External reporting is context, never automatic proof of causality. See [Phase 3 implementation status](docs/phase-3.md), [Phase 4 Context Engine](docs/phase-4.md) and [Phase 5 Universal Event Engine](docs/phase-5.md).
 
 ![WORLD SIGNAL live interface — real USGS and NASA FIRMS data](docs/live-preview.png)
 
@@ -36,7 +36,7 @@ In a third terminal, keep the scheduler running:
 npm run worker
 ```
 
-The long-running worker collects USGS and FIRMS, recomputes signals, refreshes context investigations and refreshes universal world-event providers. EONET refreshes are semantically deduplicated. Set `OPEN_METEO_ENABLED=true` to include the weather sentinel locally. Internet, aviation and marine collection also have dedicated hosted workflows.
+The long-running worker collects USGS, FIRMS and IODA country series, recomputes signals, refreshes context investigations and refreshes universal world-event providers. EONET refreshes are semantically deduplicated. Set `OPEN_METEO_ENABLED=true` to include the weather sentinel locally. Internet, aviation and marine collection also have dedicated hosted workflows.
 
 One-shot refreshes:
 

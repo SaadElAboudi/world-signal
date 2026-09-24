@@ -1,3 +1,4 @@
+import { createBudgetedFetch } from "../server/budgeted-fetch";
 import { fetchText } from "./http";
 
 export interface EntsoeRegion {
@@ -15,12 +16,48 @@ export interface PowerLoadObservation {
 }
 
 export const ENTSOE_REGIONS: readonly EntsoeRegion[] = [
-  { id: "france", name: "France", eic: "10YFR-RTE------C", latitude: 46.6, longitude: 2.4 },
-  { id: "germany-lux", name: "Germany–Luxembourg", eic: "10Y1001A1001A82H", latitude: 51.1, longitude: 10.4 },
-  { id: "belgium", name: "Belgium", eic: "10YBE----------2", latitude: 50.6, longitude: 4.7 },
-  { id: "netherlands", name: "Netherlands", eic: "10YNL----------L", latitude: 52.2, longitude: 5.3 },
-  { id: "spain", name: "Spain", eic: "10YES-REE------0", latitude: 40.4, longitude: -3.7 },
-  { id: "poland", name: "Poland", eic: "10YPL-AREA-----S", latitude: 52.1, longitude: 19.4 },
+  {
+    id: "france",
+    name: "France",
+    eic: "10YFR-RTE------C",
+    latitude: 46.6,
+    longitude: 2.4,
+  },
+  {
+    id: "germany-lux",
+    name: "Germany–Luxembourg",
+    eic: "10Y1001A1001A82H",
+    latitude: 51.1,
+    longitude: 10.4,
+  },
+  {
+    id: "belgium",
+    name: "Belgium",
+    eic: "10YBE----------2",
+    latitude: 50.6,
+    longitude: 4.7,
+  },
+  {
+    id: "netherlands",
+    name: "Netherlands",
+    eic: "10YNL----------L",
+    latitude: 52.2,
+    longitude: 5.3,
+  },
+  {
+    id: "spain",
+    name: "Spain",
+    eic: "10YES-REE------0",
+    latitude: 40.4,
+    longitude: -3.7,
+  },
+  {
+    id: "poland",
+    name: "Poland",
+    eic: "10YPL-AREA-----S",
+    latitude: 52.1,
+    longitude: 19.4,
+  },
 ];
 
 type Options = {
@@ -38,15 +75,24 @@ function durationMs(value: string) {
 
 function tag(block: string, name: string) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`<${escaped}[^>]*>([^<]+)</${escaped}>`, "i").exec(block)?.[1]?.trim() ?? null;
+  return (
+    new RegExp(`<${escaped}[^>]*>([^<]+)</${escaped}>`, "i")
+      .exec(block)?.[1]
+      ?.trim() ?? null
+  );
 }
 
-export function parseEntsoeActualLoad(xml: string): { timestamp: string; loadMw: number } | null {
+export function parseEntsoeActualLoad(
+  xml: string,
+): { timestamp: string; loadMw: number } | null {
   if (/Acknowledgement_MarketDocument/i.test(xml)) return null;
   const values = new Map<number, number>();
   const periods = xml.match(/<Period>[\s\S]*?<\/Period>/gi) ?? [];
   for (const period of periods) {
-    const interval = /<timeInterval>[\s\S]*?<start>([^<]+)<\/start>[\s\S]*?<\/timeInterval>/i.exec(period);
+    const interval =
+      /<timeInterval>[\s\S]*?<start>([^<]+)<\/start>[\s\S]*?<\/timeInterval>/i.exec(
+        period,
+      );
     const resolution = tag(period, "resolution");
     if (!interval || !resolution) continue;
     const start = Date.parse(interval[1]);
@@ -55,11 +101,21 @@ export function parseEntsoeActualLoad(xml: string): { timestamp: string; loadMw:
     const points = period.match(/<Point>[\s\S]*?<\/Point>/gi) ?? [];
     for (const point of points) {
       const position = Number(tag(point, "position"));
-      const quantity = Number(tag(point, "quantity"));
-      if (!Number.isFinite(position) || position < 1 || !Number.isFinite(quantity) || quantity < 0)
+      const rawQuantity = tag(point, "quantity");
+      if (rawQuantity === null) continue;
+      const quantity = Number(rawQuantity);
+      if (
+        !Number.isInteger(position) ||
+        position < 1 ||
+        !Number.isFinite(quantity) ||
+        quantity < 0
+      )
         continue;
       const timestamp = start + (position - 1) * step;
-      values.set(timestamp, (values.get(timestamp) ?? 0) + quantity);
+      // Duplicate points/revisions must not double the load reference.
+      if (values.has(timestamp) && values.get(timestamp) !== quantity)
+        return null;
+      values.set(timestamp, quantity);
     }
   }
   if (!values.size) return null;
@@ -84,13 +140,18 @@ export class EntsoeActualLoadProvider {
 
   constructor(options: Options) {
     if (!options.token) throw new Error("ENTSOE_SECURITY_TOKEN is required");
-    this.fetcher = options.fetcher ?? fetch;
+    this.fetcher = options.fetcher ?? createBudgetedFetch("entsoe");
     this.endpoint = options.endpoint ?? "https://web-api.tp.entsoe.eu/api";
     this.token = options.token;
     this.regions = options.regions ?? ENTSOE_REGIONS;
   }
 
-  async fetchLoads(now = new Date()): Promise<{ observations: PowerLoadObservation[]; failedRegions: string[] }> {
+  async fetchLoads(
+    now = new Date(),
+  ): Promise<{
+    observations: PowerLoadObservation[];
+    failedRegions: string[];
+  }> {
     const from = new Date(now.getTime() - 6 * 3_600_000);
     const observations: PowerLoadObservation[] = [];
     const failedRegions: string[] = [];
@@ -109,7 +170,11 @@ export class EntsoeActualLoadProvider {
           timeoutMs: 20_000,
         });
         const parsed = parseEntsoeActualLoad(text);
-        if (!parsed) {
+        if (
+          !parsed ||
+          Date.parse(parsed.timestamp) > now.getTime() ||
+          now.getTime() - Date.parse(parsed.timestamp) > 6 * 3600000
+        ) {
           failedRegions.push(region.id);
           continue;
         }

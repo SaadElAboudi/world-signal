@@ -7,7 +7,7 @@ const mono = Geist_Mono({ variable: "--font-mono", subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "WORLD SIGNAL — What changed?",
   description:
-    "A window into a changing world. Explore unusual activity across earthquakes, wildfires, internet connectivity and aviation. Interactive demonstration with clearly labeled synthetic data.",
+    "A window into a changing world. Explore unusual activity across earthquakes, wildfires, internet connectivity and aviation. Observed measurements, transparent sources and explicitly labeled demo scenarios.",
 };
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

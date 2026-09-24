@@ -18,7 +18,9 @@ if (!testUrl && liveUrl) {
   }
 }
 if (!testUrl || !new URL(testUrl).pathname.endsWith("_test"))
-  throw new Error("TEST_DATABASE_URL must name a dedicated database ending in _test");
+  throw new Error(
+    "TEST_DATABASE_URL must name a dedicated database ending in _test",
+  );
 process.env.DATABASE_URL = testUrl;
 
 before(async () => {
@@ -32,9 +34,19 @@ after(async () => {
 
 test("API budget reservation hard-stops before exceeding configured limits", async () => {
   const now = new Date("2026-09-23T05:00:00Z");
-  const first = await reserveApiBudget("test-provider", 2, { daily: 3, monthly: 3 }, now);
+  const first = await reserveApiBudget(
+    "test-provider",
+    2,
+    { daily: 3, monthly: 3 },
+    now,
+  );
   assert.equal(first.allowed, true);
-  const second = await reserveApiBudget("test-provider", 2, { daily: 3, monthly: 3 }, now);
+  const second = await reserveApiBudget(
+    "test-provider",
+    2,
+    { daily: 3, monthly: 3 },
+    now,
+  );
   assert.equal(second.allowed, false);
   assert.equal(second.reason, "daily_limit");
   const stored = await getPool().query(
@@ -54,4 +66,30 @@ test("storage governor reaches critical pressure before a configured hard quota"
     if (previous === undefined) delete process.env.DATABASE_STORAGE_QUOTA_BYTES;
     else process.env.DATABASE_STORAGE_QUOTA_BYTES = previous;
   }
+});
+
+test("concurrent reservations across days cannot exceed the monthly cap", async () => {
+  const results = await Promise.all(
+    Array.from({ length: 12 }, (_, i) =>
+      reserveApiBudget(
+        "concurrent-test",
+        1,
+        { daily: 10, monthly: 5 },
+        new Date(`2026-09-${i % 2 ? "24" : "23"}T12:00:00Z`),
+      ),
+    ),
+  );
+  assert.equal(results.filter((r) => r.allowed).length, 5);
+  const stored = await getPool().query(
+    "SELECT sum(calls)::int AS calls FROM api_usage_daily WHERE provider='concurrent-test'",
+  );
+  assert.equal(stored.rows[0].calls, 5);
+});
+
+test("invalid reservation counts fail before touching the ledger", async () => {
+  for (const count of [-1, NaN, Infinity, 1.5])
+    await assert.rejects(
+      reserveApiBudget("invalid-test", count, { daily: 10, monthly: 10 }),
+      /Invalid API budget/,
+    );
 });

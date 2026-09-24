@@ -1,3 +1,4 @@
+import { createBudgetedFetch } from "./budgeted-fetch";
 import type { WorldEvent } from "../events/types";
 import { fetchText } from "../providers/http";
 import {
@@ -47,7 +48,7 @@ async function fetchReference(
   url.searchParams.set("models", "era5");
   if (options.apiKey) url.searchParams.set("apikey", options.apiKey);
   const { text } = await fetchText(url.toString(), {
-    fetcher: options.fetcher ?? fetch,
+    fetcher: options.fetcher ?? createBudgetedFetch("open-meteo"),
     attempts: 2,
     timeoutMs: 30_000,
   });

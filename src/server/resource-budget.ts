@@ -5,14 +5,12 @@ import {
 } from "../database/resource-governor";
 
 export type BudgetedProvider =
-  | "eonet"
-  | "open-meteo"
-  | "ioda"
-  | "adsblol"
-  | "entsoe"
-  | "context";
+  "eonet" | "open-meteo" | "ioda" | "adsblol" | "entsoe" | "context";
 
-const DEFAULT_LIMITS: Record<BudgetedProvider, { daily: number; monthly: number }> = {
+const DEFAULT_LIMITS: Record<
+  BudgetedProvider,
+  { daily: number; monthly: number }
+> = {
   // Internal safety caps, deliberately below known/free usage envelopes when published.
   eonet: { daily: 200, monthly: 5_000 },
   "open-meteo": { daily: 5_000, monthly: 120_000 },
@@ -23,10 +21,16 @@ const DEFAULT_LIMITS: Record<BudgetedProvider, { daily: number; monthly: number 
   context: { daily: 2_500, monthly: 60_000 },
 };
 
-function envLimit(provider: BudgetedProvider, period: "DAILY" | "MONTHLY", fallback: number) {
+function envLimit(
+  provider: BudgetedProvider,
+  period: "DAILY" | "MONTHLY",
+  fallback: number,
+) {
   const key = `API_BUDGET_${provider.toUpperCase().replaceAll("-", "_")}_${period}`;
-  const value = Number(process.env[key]);
-  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+  const raw = process.env[key];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : fallback;
 }
 
 export function providerBudget(provider: BudgetedProvider) {
@@ -42,17 +46,22 @@ export async function reserveProviderCalls(
   requestedCalls: number,
   now = new Date(),
 ): Promise<ApiBudgetDecision> {
-  return reserveApiBudget(provider, requestedCalls, providerBudget(provider), now);
+  return reserveApiBudget(
+    provider,
+    requestedCalls,
+    providerBudget(provider),
+    now,
+  );
 }
 
 export async function collectionGuard(
   provider: BudgetedProvider,
-  requestedCalls: number,
+  _requestedCalls: number,
   options: { storageSensitive?: boolean; now?: Date } = {},
 ) {
   const now = options.now ?? new Date();
   const storage = await getStorageBudgetState();
-  if (options.storageSensitive && storage.pressure === "critical") {
+  if (storage.ratio >= 0.65) {
     return {
       allowed: false as const,
       reason: "storage_critical" as const,
@@ -60,7 +69,7 @@ export async function collectionGuard(
       api: null,
     };
   }
-  const api = await reserveProviderCalls(provider, requestedCalls, now);
+  const api = await reserveProviderCalls(provider, 0, now);
   return {
     allowed: api.allowed,
     reason: api.allowed ? ("ok" as const) : ("api_budget" as const),

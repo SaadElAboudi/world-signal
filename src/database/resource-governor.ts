@@ -37,7 +37,13 @@ export async function getStorageBudgetState(): Promise<StorageBudgetState> {
   const bytes = Number(result.rows[0]?.bytes ?? 0);
   const ratio = quotaBytes > 0 ? bytes / quotaBytes : 0;
   const pressure: StoragePressure =
-    ratio >= 0.82 ? "critical" : ratio >= 0.7 ? "conserve" : ratio >= 0.55 ? "watch" : "normal";
+    ratio >= 0.82
+      ? "critical"
+      : ratio >= 0.7
+        ? "conserve"
+        : ratio >= 0.55
+          ? "watch"
+          : "normal";
   return { bytes, quotaBytes, ratio, pressure };
 }
 
@@ -47,12 +53,21 @@ export async function reserveApiBudget(
   limits: { daily: number; monthly: number },
   now = new Date(),
 ): Promise<ApiBudgetDecision> {
-  const calls = Math.max(0, Math.ceil(requestedCalls));
+  if (
+    ![requestedCalls, limits.daily, limits.monthly].every(
+      (n) => Number.isSafeInteger(n) && n >= 0,
+    )
+  )
+    throw new Error("Invalid API budget");
+  const calls = requestedCalls;
   const client = await getPool().connect();
   const day = now.toISOString().slice(0, 10);
   const monthStart = `${day.slice(0, 7)}-01`;
   try {
     await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+      `api-budget:${provider}`,
+    ]);
     await client.query(
       `INSERT INTO api_usage_daily(provider,usage_date,calls,units)
        VALUES($1,$2,0,0)
@@ -66,8 +81,8 @@ export async function reserveApiBudget(
     const monthlyResult = await client.query(
       `SELECT COALESCE(sum(calls),0)::bigint AS calls
        FROM api_usage_daily
-       WHERE provider=$1 AND usage_date >= $2::date AND usage_date <= $3::date`,
-      [provider, monthStart, day],
+       WHERE provider=$1 AND usage_date >= $2::date AND usage_date < $2::date + interval '1 month'`,
+      [provider, monthStart],
     );
     const dailyUsed = Number(dailyResult.rows[0]?.calls ?? 0);
     const monthlyUsed = Number(monthlyResult.rows[0]?.calls ?? 0);
@@ -107,7 +122,7 @@ export async function reserveApiBudget(
 export async function pruneApiUsageLedger(now = new Date(), keepDays = 45) {
   const result = await getPool().query(
     "DELETE FROM api_usage_daily WHERE usage_date < $1::date-($2*interval '1 day')",
-    [now, Math.max(7, keepDays)],
+    [now, Math.max(32, keepDays)],
   );
   return result.rowCount ?? 0;
 }

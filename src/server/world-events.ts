@@ -1,4 +1,9 @@
-import type { EventCategory, EventProvider, EventType, WorldEvent } from "../events/types";
+import type {
+  EventCategory,
+  EventProvider,
+  EventType,
+  WorldEvent,
+} from "../events/types";
 import { EonetEventProvider } from "../events/providers/eonet";
 import { OpenMeteoExtremeWeatherProvider } from "../events/providers/open-meteo";
 import { OpenMeteoMarineProvider } from "../events/providers/open-meteo-marine";
@@ -25,7 +30,10 @@ const CATEGORIES = new Set<EventCategory>([
 type RefreshOptions = { now?: Date; days?: number; limit?: number };
 type EventTransform = (events: WorldEvent[]) => Promise<WorldEvent[]>;
 
-function emptyResult(provider: string, status: "disabled" | "budget_limited" | "skipped") {
+function emptyResult(
+  provider: string,
+  status: "disabled" | "budget_limited" | "skipped" | "failed",
+) {
   return {
     provider,
     status,
@@ -93,7 +101,8 @@ export async function refreshEonetWorldEvents(options: RefreshOptions = {}) {
 }
 
 export async function refreshWeatherWorldEvents(options: RefreshOptions = {}) {
-  if (process.env.OPEN_METEO_ENABLED !== "true") return emptyResult("open-meteo", "disabled");
+  if (process.env.OPEN_METEO_ENABLED !== "true")
+    return emptyResult("open-meteo", "disabled");
   // Seven H3-r0 forecast batches + at most two bounded archive cache misses.
   const limited = await withinBudget("open-meteo", 9, options.now);
   if (limited) return limited;
@@ -128,24 +137,40 @@ export async function refreshMarineWorldEvents(options: RefreshOptions = {}) {
 }
 
 export async function refreshInternetWorldEvents(options: RefreshOptions = {}) {
-  if (process.env.IODA_ENABLED === "false") return emptyResult("ioda", "disabled");
+  if (process.env.IODA_ENABLED === "false")
+    return emptyResult("ioda", "disabled");
   const limited = await withinBudget("ioda", 1, options.now);
   if (limited) return limited;
   const endpoint = process.env.IODA_ENDPOINT || undefined;
-  return refreshProvider(
-    new IodaInternetOutageProvider({ endpoint }),
-    { ...options, days: options.days ?? 90, limit: options.limit ?? 1000 },
-  );
+  return refreshProvider(new IodaInternetOutageProvider({ endpoint }), {
+    ...options,
+    days: options.days ?? 90,
+    limit: options.limit ?? 1000,
+  });
 }
 
 export async function refreshAllWorldEvents(options: RefreshOptions = {}) {
-  const eonet = await refreshEonetWorldEvents({
-    ...options,
-    days: options.days ?? 14,
-  });
-  const weather = await refreshWeatherWorldEvents(options);
-  const internet = await refreshInternetWorldEvents(options);
-  return { status: "success" as const, providers: [eonet, weather, internet] };
+  const results = [];
+  for (const [name, refresh] of [
+    [
+      "eonet",
+      () => refreshEonetWorldEvents({ ...options, days: options.days ?? 14 }),
+    ],
+    ["open-meteo", () => refreshWeatherWorldEvents(options)],
+    ["ioda", () => refreshInternetWorldEvents(options)],
+  ] as const) {
+    try {
+      results.push(await refresh());
+    } catch {
+      results.push(emptyResult(name, "failed"));
+    }
+  }
+  return {
+    status: results.some((r) => r.status === "failed")
+      ? ("partial" as const)
+      : ("success" as const),
+    providers: results,
+  };
 }
 
 export async function queryWorldEvents(params: URLSearchParams) {

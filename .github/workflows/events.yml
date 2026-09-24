@@ -29,7 +29,5 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - name: Apply database migrations
-        run: npm run db:migrate
       - name: Refresh normalized world events
         run: npm run events:refresh

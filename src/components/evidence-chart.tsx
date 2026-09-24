@@ -1,5 +1,8 @@
+"use client";
+import { useI18n } from "@/i18n/context";
 import type { WorldSignal } from "@/core/types";
 export function EvidenceChart({ signal }: { signal: WorldSignal }) {
+  const { t } = useI18n();
   const width = 320,
     height = 125,
     pad = 14;
@@ -8,8 +11,10 @@ export function EvidenceChart({ signal }: { signal: WorldSignal }) {
       <div className="context-note">
         <p>
           {signal.kind === "earthquake-event"
-            ? "This event crossed a documented selection threshold. No historical baseline or statistical deviation is claimed."
-            : "Insufficient historical data for a baseline comparison."}
+            ? t(
+                "This event crossed a documented selection threshold. No historical baseline or statistical deviation is claimed.",
+              )
+            : t("Insufficient historical data for a baseline comparison.")}
         </p>
       </div>
     );
@@ -29,11 +34,11 @@ export function EvidenceChart({ signal }: { signal: WorldSignal }) {
       <div className="chart-key">
         <span>
           <i />
-          Reference samples
+          {t("Reference samples")}
         </span>
         <span>
           <i />
-          Current observation
+          {t("Current observation")}
         </span>
       </div>
       <svg
@@ -79,15 +84,15 @@ export function EvidenceChart({ signal }: { signal: WorldSignal }) {
       <div className="chart-axis">
         <span>
           {synthetic
-            ? "−30 DAYS"
+            ? t("−30 DAYS")
             : `${signal.baseline.length} REFERENCE WINDOWS`}
         </span>
-        <span>REFERENCE END</span>
-        <span>CURRENT</span>
+        <span>{t("REFERENCE END")}</span>
+        <span>{t("CURRENT")}</span>
       </div>
       <p className="fineprint">
         {synthetic ? "Daily" : `${signal.evidence?.baselineWindowHours}-hour`}{" "}
-        reference samples; dashed segment is not measured history.
+        {t("reference samples; dashed segment is not measured history.")}
       </p>
     </div>
   );

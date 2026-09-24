@@ -261,7 +261,7 @@ export function correlate(
     );
     return {
       id: `correlation:${createHash("sha256")
-        .update(`${window}:${signalIds.join("|")}`)
+        .update(signalIds.join("|"))
         .digest("hex")
         .slice(0, 24)}`,
       geographicScope: scope,
@@ -346,8 +346,7 @@ export function reconcileEvents(
       current.some(
         (candidate) =>
           event.signalIds.every((id) => candidate.signalIds.includes(id)) &&
-          candidate.provenance === event.provenance &&
-          candidate.windowHours === event.windowHours,
+          candidate.provenance === event.provenance,
       )
     )
       continue;

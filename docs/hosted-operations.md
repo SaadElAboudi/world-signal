@@ -8,7 +8,7 @@ The free deployment has three independent resources to protect:
 
 1. **PostgreSQL disk** — the Aiven free PostgreSQL service currently has a 1 GiB disk budget.
 2. **External APIs** — some providers publish quotas, some do not, and terms can change.
-3. **GitHub Actions minutes** — a private repository on GitHub Free currently receives 2,000 hosted-runner minutes per month.
+3. **GitHub Actions minutes** — the account has a finite shared allowance; CI, manual jobs, and other repositories also consume it.
 
 A system that respects only API quotas can still fail because of database growth or scheduler minutes. WORLD SIGNAL therefore governs all three.
 
@@ -27,9 +27,9 @@ DATABASE_STORAGE_QUOTA_BYTES=1073741824
 | `normal` | <55% | normal compact retention |
 | `watch` | ≥55% | shorten secondary history and representative raw fire evidence |
 | `conserve` | ≥70% | stronger compaction |
-| `critical` | ≥82% | preserve current state/baselines, aggressively shorten expendable history, skip storage-sensitive collectors |
+| `critical` | ≥82% | preserve current state/baselines, aggressively shorten expendable history, keep collection paused |
 
-At a 1 GiB quota, those thresholds are roughly 563 MiB, 717 MiB and 840 MiB. The system intentionally reacts **before** disk exhaustion.
+At a 1 GiB quota, those thresholds are roughly 563 MiB, 717 MiB and 840 MiB. Observation and event collection is blocked at 65% to leave headroom below the 70% target. Maintenance runs before collection. PostgreSQL deletes create reusable space without immediately shrinking database files; WAL and service-wide disk usage are not measured by pg_database_size. A single batch and concurrent writes can exceed the target; this is an operational guard, not a storage-size guarantee.
 
 ### Adaptive retention
 
@@ -52,24 +52,24 @@ Under `critical` pressure this contracts to approximately:
 - universal-event history: 7 days;
 - resolved universal events: 14 days.
 
-The order matters: WORLD SIGNAL discards **duplicative/raw evidence before current state and compact baselines**. Detection should survive pressure longer than detailed historical proof.
+The order matters: WORLD SIGNAL discards **duplicative/raw evidence before current state and compact baselines**. Shortened history can make matched baselines unavailable; this must remain unknown, never a fabricated normal measurement.
 
 The first documented hosted import analyzed 514,805 fire detections while retaining only 29,617 representative raw samples and 32,292 hourly cell aggregates; the database was approximately 109 MB at that snapshot. Real activity varies, so the governor is still required.
 
 ## API-call governor
 
-`api_usage_daily` contains one tiny row per provider per UTC day. A collector reserves its expected call count transactionally **before** making external requests. If the daily or monthly internal budget would be crossed, the collector returns `budget_limited` instead of calling the provider.
+`api_usage_daily` contains one tiny row per provider per UTC day. Each actual outgoing request reserves quota transactionally before the network call, including retries. Provider-wide transaction locks serialize concurrent daily/monthly reservations; zero limits disable calls. Multi-location Open-Meteo queries reserve per-location units, with an additional conservative factor for long archive ranges. These internal units are not a replica of vendor billing. HTTP 429 persists Retry-After across worker restarts. If the daily or monthly internal budget would be crossed, the collector returns `budget_limited` instead of calling the provider.
 
 Default WORLD SIGNAL safety caps:
 
-| Provider group | Daily | Monthly | Current hosted hourly usage ceiling |
-| --- | ---: | ---: | ---: |
-| EONET | 200 | 5,000 | ~24/day |
-| Open-Meteo weather + archive + marine | 5,000 | 120,000 | normally <300/day once climatology cache is warm |
-| IODA | 500 | 14,000 | ~24/day |
-| ADSB.lol | 2,500 | 70,000 | ~480/day at 20 sentinel requests/hour |
-| ENTSO-E | 200 | 5,000 | 144/day when enabled (6 zones/hour) |
-| Context (GDELT + GDACS) | 2,500 | 60,000 | bounded by investigation demand |
+| Provider group | Daily internal units | Monthly internal units |
+| --- | ---: | ---: |
+| EONET | 200 | 5,000 |
+| Open-Meteo weather + archive + marine | 5,000 | 120,000 |
+| IODA (country time series and events combined) | 500 | 14,000 |
+| ADSB.lol | 2,500 | 70,000 |
+| ENTSO-E | 200 | 5,000 |
+| Context (GDELT + GDACS) | 2,500 | 60,000 |
 
 These are **internal safety limits**, not assertions about upstream quotas. Provider terms remain authoritative and must be reviewed before raising them. The Open-Meteo free endpoint is suitable only under its current non-commercial/evaluation terms; a commercial WORLD SIGNAL deployment must use the appropriate commercial endpoint/plan or another licensed source.
 
@@ -87,7 +87,7 @@ The command prints database MiB, quota percentage, pressure state and current pr
 
 The private repository must stay within the account's included Actions minutes. Running separate 5-minute and 15-minute cron workflows would create thousands of jobs per month before CI is counted.
 
-Production therefore uses **one scheduled workflow per hour**: `.github/workflows/ingest.yml`. One checkout + one `npm ci` performs the bounded worker pass for:
+Production therefore uses **one scheduled workflow every four hours**: `.github/workflows/ingest.yml`. One checkout + one `npm ci` performs the bounded worker pass for:
 
 - USGS;
 - FIRMS;
@@ -101,7 +101,7 @@ Production therefore uses **one scheduled workflow per hour**: `.github/workflow
 - Context Engine refresh;
 - retention/compaction.
 
-This means at most about 720 scheduled job starts in a 30-day month, rather than several thousand. Actual billed minutes depend on real runtime, and CI also consumes the same account allowance. The old fast refresh workflows remain available via `workflow_dispatch` for manual diagnostics but have **no automatic schedule** in the free-tier profile.
+At six scheduled starts/day and an eight-minute job timeout, the scheduled envelope is at most 1,488 runner minutes in a 31-day month. CI, manual jobs, and other repositories add usage; this is not an account-wide billing guarantee. The old fast refresh workflows remain available via `workflow_dispatch` for manual diagnostics but have **no automatic schedule** in the free-tier profile.
 
 The code still supports faster provider cadences. A future persistent/self-hosted worker can restore 5–15 minute collection without consuming GitHub-hosted runner minutes.
 
@@ -133,7 +133,7 @@ Provider failure never means recovery:
 
 ## Release and verification
 
-Database migrations must run before collectors use new tables. The hosted workflow does this before every bounded pass.
+Database migrations must run before collectors use new tables. Run them once with the administrator role before deploying. Scheduled jobs intentionally never run migrations with their restricted worker credentials.
 
 Useful checks:
 

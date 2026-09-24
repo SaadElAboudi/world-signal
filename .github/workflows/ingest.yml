@@ -1,7 +1,7 @@
 name: Collect world state
 on:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "17 */4 * * *"
   workflow_dispatch:
 permissions:
   contents: read
@@ -12,7 +12,8 @@ jobs:
   ingest:
     if: vars.WORLD_SIGNAL_INGEST_ENABLED == 'true'
     runs-on: ubuntu-latest
-    # One bounded hosted pass replaces the old 5/15-minute workflow fan-out.
+    # Six bounded passes/day: at most 1,488 scheduled runner minutes in 31 days.
+    # CI and manual runs use additional minutes; account-wide limits remain external.
     timeout-minutes: 8
     env:
       DATABASE_URL: ${{ secrets.WORLD_SIGNAL_DATABASE_URL }}
@@ -26,9 +27,9 @@ jobs:
       FIRMS_RAW_SAMPLES_PER_CELL_HOUR: "5"
       USGS_STALE_MINUTES: "90"
       ANALYSIS_STALE_MINUTES: "90"
-      COLLECTION_CADENCE_MINUTES: "60"
-      USGS_INTERVAL_MINUTES: "60"
-      FIRMS_INTERVAL_MINUTES: "60"
+      COLLECTION_CADENCE_MINUTES: "240"
+      USGS_INTERVAL_MINUTES: "240"
+      FIRMS_INTERVAL_MINUTES: "240"
       OPEN_METEO_ENABLED: "true"
       OPEN_METEO_ENDPOINT: ${{ vars.OPEN_METEO_ENDPOINT || 'https://api.open-meteo.com/v1/forecast' }}
       OPEN_METEO_ARCHIVE_ENDPOINT: ${{ vars.OPEN_METEO_ARCHIVE_ENDPOINT || 'https://archive-api.open-meteo.com/v1/archive' }}
@@ -38,7 +39,7 @@ jobs:
       IODA_ENABLED: "true"
       IODA_ENDPOINT: ${{ vars.IODA_ENDPOINT || 'https://api.ioda.inetintel.cc.gatech.edu/v2/outages/events' }}
       ADSB_LOL_ENABLED: "true"
-      ADSB_LOL_INTERVAL_MINUTES: "60"
+      ADSB_LOL_INTERVAL_MINUTES: "240"
       ENTSOE_ENABLED: ${{ vars.ENTSOE_ENABLED || 'false' }}
       ENTSOE_SECURITY_TOKEN: ${{ secrets.ENTSOE_SECURITY_TOKEN }}
       ENTSOE_ENDPOINT: https://web-api.tp.entsoe.eu/api
@@ -49,7 +50,5 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - name: Apply pending database migrations
-        run: npm run db:migrate
       - name: Collect, analyze, contextualize and compact
         run: npm run worker -- --once ${{ github.event_name == 'workflow_dispatch' && '--force' || '' }}

@@ -33,8 +33,32 @@ async function main() {
   let lastMaintenance = 0;
   while (!stopping) {
     let failed = false;
+    const attempt = async (name: string, task: () => Promise<unknown>) => {
+      try {
+        const result = await task();
+        if (
+          result &&
+          typeof result === "object" &&
+          "status" in result &&
+          ["failed", "unavailable", "partial"].includes(String(result.status))
+        )
+          failed = true;
+        return result;
+      } catch (error) {
+        failed = true;
+        log("worker.task.failed", { task: name, code: errorCode(error) });
+      }
+    };
     try {
+      if (Date.now() - lastMaintenance >= 3600000) {
+        await maintainCompactStorage();
+        lastMaintenance = Date.now();
+      }
       const config = getConfig();
+      await getPool().query(
+        "INSERT INTO collection_settings(id,cadence_minutes) VALUES(true,$1) ON CONFLICT(id) DO UPDATE SET cadence_minutes=EXCLUDED.cadence_minutes,updated_at=now()",
+        [config.collectionCadenceMinutes],
+      );
       for (const provider of providers) {
         const last = await getPool().query(
           "SELECT max(started_at) AS attempt,max(finished_at) FILTER(WHERE history AND status='success') AS history FROM provider_runs WHERE provider=$1",
@@ -43,7 +67,11 @@ async function main() {
         const interval =
           (provider.id === "usgs"
             ? config.usgsIntervalMinutes
-            : config.firmsIntervalMinutes) * 60000;
+            : provider.id === "firms"
+              ? config.firmsIntervalMinutes
+              : provider.id === "ioda"
+                ? config.internetIntervalMinutes
+                : config.aviationIntervalMinutes) * 60000;
         if (
           process.argv.includes("--force") ||
           !last.rows[0].attempt ||
@@ -60,83 +88,98 @@ async function main() {
       }
 
       if (Date.now() - lastComputed >= 300000) {
-        await computeSignals();
-        lastComputed = Date.now();
+        await attempt("analysis", async () => {
+          await computeSignals();
+          lastComputed = Date.now();
+        });
       }
 
       if (eventRefreshEnabled && Date.now() - lastEventRefresh >= 15 * 60000) {
-        const events = await refreshAllWorldEvents({ days: 14, limit: 1000 });
-        log("events.refresh.completed", {
-          providers: JSON.stringify(
-            events.providers.map((provider) => ({
-              provider: provider.provider,
-              status: provider.status,
-              received: provider.received,
-              inserted: provider.inserted,
-              updated: provider.updated,
-              unchanged: provider.unchanged,
-              resolved: provider.resolved,
-            })),
-          ),
+        await attempt("events", async () => {
+          const events = await refreshAllWorldEvents({ days: 14, limit: 1000 });
+          log("events.refresh.completed", {
+            providers: JSON.stringify(
+              events.providers.map((provider) => ({
+                provider: provider.provider,
+                status: provider.status,
+                received: provider.received,
+                inserted: provider.inserted,
+                updated: provider.updated,
+                unchanged: provider.unchanged,
+                resolved: provider.resolved,
+              })),
+            ),
+          });
+          lastEventRefresh = Date.now();
+
+          return events;
         });
-        lastEventRefresh = Date.now();
       }
 
       if (eventRefreshEnabled && Date.now() - lastMarineRefresh >= 60 * 60000) {
-        const marine = await refreshMarineWorldEvents();
-        log("marine.refresh.completed", {
-          status: marine.status,
-          received: marine.received,
-          inserted: marine.inserted,
-          updated: marine.updated,
-          unchanged: marine.unchanged,
-          resolved: marine.resolved,
+        await attempt("marine", async () => {
+          const marine = await refreshMarineWorldEvents();
+          log("marine.refresh.completed", {
+            status: marine.status,
+            received: marine.received,
+            inserted: marine.inserted,
+            updated: marine.updated,
+            unchanged: marine.unchanged,
+            resolved: marine.resolved,
+          });
+          lastMarineRefresh = Date.now();
+
+          return marine;
         });
-        lastMarineRefresh = Date.now();
       }
 
-      if (process.env.ADSB_LOL_ENABLED !== "false" && Date.now() - lastAviationRefresh >= config.adsbLolIntervalMinutes * 60000) {
-        const aviation = await refreshAviation();
-        log("aviation.refresh.completed", {
-          status: aviation.status,
-          regions: aviation.regions,
-          signals: aviation.signals,
+      if (
+        process.env.ADSB_LOL_ENABLED !== "false" &&
+        Date.now() - lastAviationRefresh >=
+          config.adsbLolIntervalMinutes * 60000
+      ) {
+        await attempt("aviation", async () => {
+          const aviation = await refreshAviation();
+          log("aviation.refresh.completed", {
+            status: aviation.status,
+            regions: aviation.regions,
+            signals: aviation.signals,
+          });
+          lastAviationRefresh = Date.now();
+
+          return aviation;
         });
-        lastAviationRefresh = Date.now();
       }
 
-      if (process.env.ENTSOE_ENABLED === "true" && Date.now() - lastPowerRefresh >= 60 * 60000) {
-        const power = await refreshPowerGrid();
-        log("power.refresh.worker", {
-          status: power.status,
-          regions: power.regions,
-          events: power.events,
+      if (
+        process.env.ENTSOE_ENABLED === "true" &&
+        Date.now() - lastPowerRefresh >= 60 * 60000
+      ) {
+        await attempt("power", async () => {
+          const power = await refreshPowerGrid();
+          log("power.refresh.worker", {
+            status: power.status,
+            regions: power.regions,
+            events: power.events,
+          });
+          lastPowerRefresh = Date.now();
+
+          return power;
         });
-        lastPowerRefresh = Date.now();
       }
 
       if (Date.now() - lastContextRefresh >= 15 * 60000) {
-        const contextResult = await refreshRecentInvestigations();
-        log("context.refresh.completed", {
-          status: contextResult.status,
-          attempted: contextResult.attempted,
-          refreshed: contextResult.refreshed,
-          failed: contextResult.failed,
-          prunedHistory: contextResult.prunedHistory,
+        await attempt("context", async () => {
+          const contextResult = await refreshRecentInvestigations({ limit: 2 });
+          log("context.refresh.completed", {
+            status: contextResult.status,
+            attempted: contextResult.attempted,
+            refreshed: contextResult.refreshed,
+            failed: contextResult.failed,
+            prunedHistory: contextResult.prunedHistory,
+          });
+          lastContextRefresh = Date.now();
         });
-        lastContextRefresh = Date.now();
-      }
-
-      if (Date.now() - lastMaintenance >= 3600000) {
-        const maintenance = await maintainCompactStorage();
-        log("storage.maintenance.completed", {
-          pressure: maintenance.storage.pressure,
-          usagePercent: Math.round(maintenance.storage.ratio * 100),
-          eventHistoryDays: maintenance.profile.eventHistoryDays,
-          observationDays: maintenance.profile.observationDays,
-          firmsRawRetentionHours: maintenance.profile.firmsRawRetentionHours,
-        });
-        lastMaintenance = Date.now();
       }
     } catch (error) {
       log("worker.tick.failed", { code: errorCode(error) });

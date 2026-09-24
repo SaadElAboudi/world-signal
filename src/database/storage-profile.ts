@@ -12,10 +12,13 @@ export interface StorageProfile {
 
 export function storageProfileForPressure(
   pressure: StoragePressure,
-  configured: { firmsRawRetentionHours: number; firmsRawSamplesPerCellHour: number },
+  configured: {
+    firmsRawRetentionHours: number;
+    firmsRawSamplesPerCellHour: number;
+  },
 ): StorageProfile {
   const rawHours = configured.firmsRawRetentionHours || 48;
-  const rawSamples = configured.firmsRawSamplesPerCellHour || 0;
+  const rawSamples = configured.firmsRawSamplesPerCellHour || Infinity;
   if (pressure === "critical")
     return {
       eventHistoryDays: 7,

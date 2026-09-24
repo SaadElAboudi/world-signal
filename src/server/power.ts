@@ -1,7 +1,10 @@
 import { getPool } from "../database/client";
 import { getStorageBudgetState } from "../database/resource-governor";
 import { storageProfileForPressure } from "../database/storage-profile";
-import { resolveMissingProviderEvents, upsertWorldEvents } from "../database/world-events";
+import {
+  resolveMissingProviderEvents,
+  upsertWorldEvents,
+} from "../database/world-events";
 import type { EventSeverity, WorldEvent } from "../events/types";
 import {
   EntsoeActualLoadProvider,
@@ -33,7 +36,11 @@ async function storageRetentionDays() {
   return { days: profile.observationDays, storage };
 }
 
-async function storeLoads(observations: PowerLoadObservation[], now: Date, retentionDays: number) {
+async function storeLoads(
+  observations: PowerLoadObservation[],
+  now: Date,
+  retentionDays: number,
+) {
   const pool = getPool();
   for (const observation of observations) {
     await pool.query(
@@ -52,7 +59,9 @@ async function storeLoads(observations: PowerLoadObservation[], now: Date, reten
   );
 }
 
-async function eventForObservation(observation: PowerLoadObservation): Promise<WorldEvent | null> {
+async function eventForObservation(
+  observation: PowerLoadObservation,
+): Promise<WorldEvent | null | undefined> {
   const timestamp = new Date(observation.timestamp);
   const history = await getPool().query(
     `SELECT load_mw
@@ -66,10 +75,12 @@ async function eventForObservation(observation: PowerLoadObservation): Promise<W
      LIMIT 14`,
     [observation.region.id, observation.timestamp, isWeekend(timestamp)],
   );
-  const samples = history.rows.map((row) => Number(row.load_mw)).filter(Number.isFinite);
-  if (samples.length < 7) return null;
+  const samples = history.rows
+    .map((row) => Number(row.load_mw))
+    .filter(Number.isFinite);
+  if (samples.length < 7) return undefined;
   const mean = samples.reduce((sum, value) => sum + value, 0) / samples.length;
-  if (mean < 100) return null;
+  if (mean < 100) return undefined;
   const reduction = 1 - observation.loadMw / mean;
   const severity = severityForReduction(reduction);
   if (!severity) return null;
@@ -122,11 +133,24 @@ export async function refreshPowerGrid(now = new Date()) {
     return { status: "disabled" as const, regions: 0, events: 0 };
   const token = process.env.ENTSOE_SECURITY_TOKEN;
   if (!token)
-    return { status: "unavailable" as const, regions: 0, events: 0, reason: "missing_token" as const };
+    return {
+      status: "unavailable" as const,
+      regions: 0,
+      events: 0,
+      reason: "missing_token" as const,
+    };
 
-  const guard = await collectionGuard("entsoe", ENTSOE_REGIONS.length, { storageSensitive: true, now });
+  const guard = await collectionGuard("entsoe", ENTSOE_REGIONS.length, {
+    storageSensitive: true,
+    now,
+  });
   if (!guard.allowed)
-    return { status: "budget_limited" as const, regions: 0, events: 0, reason: guard.reason };
+    return {
+      status: "budget_limited" as const,
+      regions: 0,
+      events: 0,
+      reason: guard.reason,
+    };
 
   const provider = new EntsoeActualLoadProvider({
     token,
@@ -134,16 +158,29 @@ export async function refreshPowerGrid(now = new Date()) {
   });
   const result = await provider.fetchLoads(now);
   if (!result.observations.length)
-    return { status: "unavailable" as const, regions: 0, events: 0, failedRegions: result.failedRegions };
+    return {
+      status: "unavailable" as const,
+      regions: 0,
+      events: 0,
+      failedRegions: result.failedRegions,
+    };
 
   const retention = await storageRetentionDays();
   await storeLoads(result.observations, now, retention.days);
-  const events = (await Promise.all(result.observations.map(eventForObservation))).filter(
-    (event): event is WorldEvent => event !== null,
+  const analyses = await Promise.all(
+    result.observations.map(eventForObservation),
   );
+  const events = analyses.filter((event): event is WorldEvent => event != null);
   await upsertWorldEvents(events, now);
-  if (result.failedRegions.length === 0)
-    await resolveMissingProviderEvents("entsoe", events.map((event) => event.id), now);
+  if (
+    result.failedRegions.length === 0 &&
+    analyses.every((event) => event !== undefined)
+  )
+    await resolveMissingProviderEvents(
+      "entsoe",
+      events.map((event) => event.id),
+      now,
+    );
 
   log("power.refresh.completed", {
     regions: result.observations.length,
@@ -153,7 +190,9 @@ export async function refreshPowerGrid(now = new Date()) {
     storagePressure: retention.storage.pressure,
   });
   return {
-    status: result.failedRegions.length ? ("partial" as const) : ("success" as const),
+    status: result.failedRegions.length
+      ? ("partial" as const)
+      : ("success" as const),
     regions: result.observations.length,
     events: events.length,
     failedRegions: result.failedRegions,

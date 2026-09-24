@@ -1,6 +1,9 @@
 import { getPool } from "./client";
 import { getConfig } from "../server/config";
-import { getStorageBudgetState, pruneApiUsageLedger } from "./resource-governor";
+import {
+  getStorageBudgetState,
+  pruneApiUsageLedger,
+} from "./resource-governor";
 import { storageProfileForPressure } from "./storage-profile";
 import { pruneWorldEventStorage } from "./world-events";
 
@@ -15,15 +18,31 @@ export async function maintainCompactStorage(now = new Date()) {
     firmsRawRetentionHours: config.firmsRawRetentionHours,
     firmsRawSamplesPerCellHour: config.firmsRawSamplesPerHour,
   });
-  await pruneWorldEventStorage(now, profile.eventHistoryDays, profile.resolvedEventDays);
+  await pruneWorldEventStorage(
+    now,
+    profile.eventHistoryDays,
+    profile.resolvedEventDays,
+  );
   await pruneApiUsageLedger(now, 45);
 
-  if (!config.firmsRawRetentionHours)
-    return { storage, profile };
+  if (!config.firmsRawRetentionHours) return { storage, profile };
 
   const pool = getPool();
   await pool.query(
-    "DELETE FROM observations WHERE provider='usgs' AND occurred_at<$1::timestamptz-($2*interval '1 day')",
+    "DELETE FROM signal_versions WHERE recorded_at<$1::timestamptz-interval '35 days'",
+    [now],
+  );
+  await pool.query(
+    "DELETE FROM correlated_events WHERE window_end<$1::timestamptz-interval '35 days'",
+    [now],
+  );
+  await pool.query(
+    "DELETE FROM correlation_runs WHERE computed_at<$1::timestamptz-interval '35 days'",
+    [now],
+  );
+
+  await pool.query(
+    "DELETE FROM observations WHERE provider IN ('usgs','ioda','adsblol') AND occurred_at<$1::timestamptz-($2*interval '1 day')",
     [now, profile.observationDays],
   );
   await pool.query(

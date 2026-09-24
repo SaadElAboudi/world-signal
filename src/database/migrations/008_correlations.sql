@@ -1,0 +1,10 @@
+INSERT INTO provider_registry(id,name,signal_type) VALUES ('ioda','IODA · active probing','internet'),('adsblol','ADSB.lol','aviation') ON CONFLICT DO NOTHING;
+ALTER TABLE provider_registry ADD COLUMN independence_group text;
+UPDATE provider_registry SET independence_group=CASE signal_type WHEN 'earthquake' THEN 'seismic' WHEN 'wildfire' THEN 'thermal' WHEN 'internet' THEN 'internet-measurement' ELSE 'aviation-measurement' END;
+CREATE TABLE provider_scopes(provider text NOT NULL,scope_id text NOT NULL,label text NOT NULL,ok boolean NOT NULL,checked_at timestamptz NOT NULL,latest_observation_at timestamptz,error_code text,PRIMARY KEY(provider,scope_id));
+CREATE TABLE signal_versions(signal_id text NOT NULL,recorded_at timestamptz NOT NULL,provider text NOT NULL,started_at timestamptz NOT NULL,observed_at timestamptz NOT NULL,resolved_at timestamptz,payload jsonb NOT NULL,PRIMARY KEY(signal_id,recorded_at));
+CREATE INDEX signal_versions_time ON signal_versions(recorded_at DESC,signal_id);
+CREATE INDEX signal_versions_observed ON signal_versions(observed_at DESC);
+CREATE TABLE correlated_events(id text PRIMARY KEY,updated_at timestamptz NOT NULL,started_at timestamptz NOT NULL,window_end timestamptz NOT NULL,status text NOT NULL,payload jsonb NOT NULL);
+CREATE INDEX correlated_events_window ON correlated_events(window_end DESC,status);
+CREATE TABLE correlation_runs(id bigserial PRIMARY KEY,computed_at timestamptz NOT NULL DEFAULT now(),signal_count integer NOT NULL,event_count integer NOT NULL);

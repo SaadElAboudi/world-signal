@@ -9,3 +9,8 @@ CREATE TABLE IF NOT EXISTS api_usage_daily (
 
 CREATE INDEX IF NOT EXISTS api_usage_daily_date_idx
   ON api_usage_daily (usage_date);
+
+CREATE TABLE IF NOT EXISTS api_cooldowns (
+  provider text PRIMARY KEY,
+  retry_at timestamptz NOT NULL
+);

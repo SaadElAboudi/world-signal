@@ -1,3 +1,4 @@
+import { createBudgetedFetch } from "../../server/budgeted-fetch";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -33,9 +34,20 @@ let countryLocationCache: Map<string, CountryLocation> | null = null;
 
 function alpha2(properties: Record<string, unknown> | undefined) {
   if (!properties) return null;
-  for (const key of ["ISO_A2", "ISO_A2_EH", "WB_A2", "POSTAL", "iso_a2", "ISO2"]) {
+  for (const key of [
+    "ISO_A2",
+    "ISO_A2_EH",
+    "WB_A2",
+    "POSTAL",
+    "iso_a2",
+    "ISO2",
+  ]) {
     const value = properties[key];
-    if (typeof value === "string" && /^[A-Za-z]{2}$/.test(value) && value !== "-99")
+    if (
+      typeof value === "string" &&
+      /^[A-Za-z]{2}$/.test(value) &&
+      value !== "-99"
+    )
       return value.toUpperCase();
   }
   return null;
@@ -63,7 +75,9 @@ function coordinateBounds(
   return bounds;
 }
 
-async function defaultCountryLocation(code: string): Promise<CountryLocation | null> {
+async function defaultCountryLocation(
+  code: string,
+): Promise<CountryLocation | null> {
   if (!countryLocationCache) {
     const raw = await readFile(
       path.join(process.cwd(), "public/geo/countries.geojson"),
@@ -75,7 +89,8 @@ async function defaultCountryLocation(code: string): Promise<CountryLocation | n
       const countryCode = alpha2(feature.properties);
       if (!countryCode || !feature.geometry?.coordinates) continue;
       const bounds = coordinateBounds(feature.geometry.coordinates);
-      if (bounds.maxLat < bounds.minLat || bounds.maxLon < bounds.minLon) continue;
+      if (bounds.maxLat < bounds.minLat || bounds.maxLon < bounds.minLon)
+        continue;
       map.set(countryCode, {
         latitude: (bounds.minLat + bounds.maxLat) / 2,
         longitude: (bounds.minLon + bounds.maxLon) / 2,
@@ -100,7 +115,7 @@ export class IodaInternetOutageProvider implements EventProvider {
       endpoint?: string;
     } = {},
   ) {
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? createBudgetedFetch("ioda");
     this.resolveLocation = options.resolveLocation ?? defaultCountryLocation;
     this.endpoint = options.endpoint ?? `${API_ROOT}/outages/events`;
   }
@@ -129,7 +144,8 @@ export class IodaInternetOutageProvider implements EventProvider {
       headers: { accept: "application/json" },
       signal: AbortSignal.timeout(10_000),
     });
-    if (!response.ok) throw new Error(`IODA request failed: ${response.status}`);
+    if (!response.ok)
+      throw new Error(`IODA request failed: ${response.status}`);
     const parsed = responseSchema.parse(await response.json());
     const rows = Array.isArray(parsed) ? parsed : parsed.data;
     const events: WorldEvent[] = [];
@@ -161,7 +177,11 @@ export class IodaInternetOutageProvider implements EventProvider {
         severity: "notable",
         confidence: 0.75,
         startedAt: startedAt.toISOString(),
-        updatedAt: now.toISOString(),
+        // Source observation time, not polling time: unchanged historical
+        // outages must not create another archived version every five minutes.
+        updatedAt: new Date(
+          Math.min(apparentEnd.getTime(), now.getTime()),
+        ).toISOString(),
         endedAt: active ? null : apparentEnd.toISOString(),
         location: {
           latitude: location.latitude,

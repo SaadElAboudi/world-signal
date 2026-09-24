@@ -1,5 +1,8 @@
 import type { ContextProvider } from "../context/evidence";
-import { buildInvestigation, type Investigation } from "../context/investigation";
+import {
+  buildInvestigation,
+  type Investigation,
+} from "../context/investigation";
 import { GdacsContextProvider } from "../context/providers/gdacs";
 import { GdeltContextProvider } from "../context/providers/gdelt";
 import type { CorrelatedEvent } from "../correlations/types";
@@ -38,9 +41,12 @@ export async function getSignalInvestigation(
   if (providers) return buildSignalInvestigation(id, mode, providers);
   if (mode === "demo") return buildSignalInvestigation(id, mode, []);
 
-  const cached = await getPersistedInvestigation("signal", id);
+  const cached = await getPersistedInvestigation("signal", id, {
+    allowStale: true,
+  });
   if (cached) return cached;
-  return refreshSignalInvestigation(id);
+  // Web requests never spend API quota or write with the reader role.
+  return buildSignalInvestigation(id, mode, []);
 }
 
 export async function refreshSignalInvestigation(
@@ -89,16 +95,24 @@ export async function getCorrelatedEventInvestigation(
 
   const now = options.now ?? new Date();
   if (!options.forceRefresh) {
-    const cached = await getPersistedInvestigation("correlated_event", event.id, { now });
+    const cached = await getPersistedInvestigation(
+      "correlated_event",
+      event.id,
+      { now },
+    );
     if (cached) return cached;
   }
 
   const guard = await collectionGuard("context", 2, { now });
   if (!guard.allowed) {
-    const stale = await getPersistedInvestigation("correlated_event", event.id, {
-      allowStale: true,
-      now,
-    });
+    const stale = await getPersistedInvestigation(
+      "correlated_event",
+      event.id,
+      {
+        allowStale: true,
+        now,
+      },
+    );
     if (stale) return stale;
     return buildInvestigation(event, { providers: [], signals, now });
   }

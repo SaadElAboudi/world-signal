@@ -1,3 +1,4 @@
+import { IodaProvider } from "../providers/ioda";
 import { getConfig } from "./config";
 import { getPool } from "../database/client";
 import { getStorageBudgetState } from "../database/resource-governor";
@@ -7,9 +8,11 @@ import { UsgsProvider } from "../providers/usgs";
 import { FirmsProvider } from "../providers/nasa-firms";
 import type { ObservationProvider } from "../providers/contract";
 import { DataError, errorCode, log } from "./log";
-
-export const providers = [new UsgsProvider(), new FirmsProvider()];
-
+export const providers = [
+  new UsgsProvider(),
+  new FirmsProvider(),
+  new IodaProvider(),
+];
 export async function ingest(
   provider: ObservationProvider,
   history = false,
@@ -26,7 +29,10 @@ export async function ingest(
     );
     locked = lock.rows[0].acquired;
     if (!locked) {
-      log("provider.fetch.skipped", { provider: provider.id, reason: "locked" });
+      log("provider.fetch.skipped", {
+        provider: provider.id,
+        reason: "locked",
+      });
       return { status: "skipped" as const };
     }
     await client.query(
@@ -39,6 +45,9 @@ export async function ingest(
     );
     runId = run.rows[0].id;
     log("provider.fetch.started", { provider: provider.id, history });
+    const storageBudget = await getStorageBudgetState();
+    if (storageBudget.ratio >= 0.65)
+      throw new DataError("storage_budget_exhausted");
     const raw = await provider.fetchRawData({ history, now, ...historical });
     const batch = provider.normalize(raw);
     await client.query(
@@ -46,7 +55,10 @@ export async function ingest(
       [runId, batch.received, batch.rejected],
     );
     if (batch.rejected) throw new DataError("malformed_records");
-    log("observations.normalized", { provider: provider.id, count: batch.observations.length });
+    log("observations.normalized", {
+      provider: provider.id,
+      count: batch.observations.length,
+    });
 
     const config = getConfig();
     let retentionHours = config.firmsRawRetentionHours;
@@ -74,9 +86,17 @@ export async function ingest(
       retentionHours,
       samplesPerHour,
     );
+    if (batch.scopes)
+      await client.query(
+        `INSERT INTO provider_scopes(provider,scope_id,label,ok,checked_at,latest_observation_at,error_code)
+      SELECT $1,s->>'id',s->>'label',(s->>'ok')::boolean,$2,(s->>'latestObservationAt')::timestamptz,s->>'error' FROM jsonb_array_elements($3::jsonb) s
+      ON CONFLICT(provider,scope_id) DO UPDATE SET label=EXCLUDED.label,ok=EXCLUDED.ok,checked_at=EXCLUDED.checked_at,latest_observation_at=COALESCE(EXCLUDED.latest_observation_at,provider_scopes.latest_observation_at),error_code=EXCLUDED.error_code`,
+        [provider.id, now, JSON.stringify(batch.scopes)],
+      );
     let latest: string | null = null;
     for (const observation of batch.observations)
-      if (!latest || observation.timestamp > latest) latest = observation.timestamp;
+      if (!latest || observation.timestamp > latest)
+        latest = observation.timestamp;
     await client.query(
       "UPDATE provider_runs SET status='success',finished_at=now(),records_inserted=$2,records_updated=$3,coverage_start=$4,coverage_end=$5,source_as_of=$6,latest_observation_at=$7 WHERE id=$1",
       [
