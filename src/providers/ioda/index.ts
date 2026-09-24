@@ -1,3 +1,4 @@
+import { createBudgetedFetch } from "../../server/budgeted-fetch";
 import { getConfig } from "../../server/config";
 import { DataError, errorCode } from "../../server/log";
 import { fetchText } from "../http";
@@ -45,6 +46,7 @@ export class IodaProvider implements ObservationProvider<NormalizedBatch> {
       const { text } = await fetchText(url.toString(), {
         timeoutMs: 12000,
         attempts: 2,
+        fetcher: createBudgetedFetch("ioda"),
       });
       const envelope = JSON.parse(text);
       if (envelope.error || !Array.isArray(envelope.data))

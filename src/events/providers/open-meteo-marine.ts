@@ -1,3 +1,4 @@
+import { createBudgetedFetch } from "../../server/budgeted-fetch";
 import { fetchText } from "../../providers/http";
 import type { EventSeverity, WorldEvent } from "../types";
 
@@ -125,7 +126,7 @@ export class OpenMeteoMarineProvider {
   private readonly regions: readonly MarineRegion[];
 
   constructor(options: Options = {}) {
-    this.fetcher = options.fetcher ?? fetch;
+    this.fetcher = options.fetcher ?? createBudgetedFetch("open-meteo");
     this.endpoint = options.endpoint ?? "https://marine-api.open-meteo.com/v1/marine";
     this.apiKey = options.apiKey;
     this.batchSize = Math.max(1, Math.min(25, options.batchSize ?? 12));

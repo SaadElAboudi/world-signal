@@ -1,4 +1,10 @@
 export const fr: Record<string, string> = {
+  "Provider rate limit; collection is paused.":
+    "Limite du fournisseur atteinte ; collecte en pause.",
+  "API budget reached; collection is paused.":
+    "Budget API atteint ; collecte en pause.",
+  "Storage budget reached; collection is paused.":
+    "Budget de stockage atteint ; collecte en pause.",
   "LOADING EARTH": "CHARGEMENT DU GLOBE",
   "3D view unavailable on this device.":
     "La vue 3D est indisponible sur cet appareil.",

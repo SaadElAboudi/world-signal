@@ -1,6 +1,8 @@
 import { IodaProvider } from "../providers/ioda";
 import { getConfig } from "./config";
 import { getPool } from "../database/client";
+import { getStorageBudgetState } from "../database/resource-governor";
+import { storageProfileForPressure } from "../database/storage-profile";
 import { storeObservations } from "../database/observations";
 import { UsgsProvider } from "../providers/usgs";
 import { FirmsProvider } from "../providers/nasa-firms";
@@ -33,7 +35,6 @@ export async function ingest(
       });
       return { status: "skipped" as const };
     }
-    // Holding the provider lock proves older running entries no longer have a live collector.
     await client.query(
       "UPDATE provider_runs SET status='failed',finished_at=now(),error_code='interrupted' WHERE provider=$1 AND status='running'",
       [provider.id],
@@ -44,6 +45,9 @@ export async function ingest(
     );
     runId = run.rows[0].id;
     log("provider.fetch.started", { provider: provider.id, history });
+    const storageBudget = await getStorageBudgetState();
+    if (storageBudget.ratio >= 0.65)
+      throw new DataError("storage_budget_exhausted");
     const raw = await provider.fetchRawData({ history, now, ...historical });
     const batch = provider.normalize(raw);
     await client.query(
@@ -55,12 +59,32 @@ export async function ingest(
       provider: provider.id,
       count: batch.observations.length,
     });
+
+    const config = getConfig();
+    let retentionHours = config.firmsRawRetentionHours;
+    let samplesPerHour = config.firmsRawSamplesPerHour;
+    if (provider.id === "firms" && retentionHours > 0) {
+      const storage = await getStorageBudgetState();
+      const profile = storageProfileForPressure(storage.pressure, {
+        firmsRawRetentionHours: retentionHours,
+        firmsRawSamplesPerCellHour: samplesPerHour,
+      });
+      retentionHours = profile.firmsRawRetentionHours;
+      samplesPerHour = profile.firmsRawSamplesPerCellHour;
+      log("storage.profile.applied", {
+        pressure: storage.pressure,
+        usagePercent: Math.round(storage.ratio * 100),
+        firmsRawRetentionHours: retentionHours,
+        firmsRawSamplesPerCellHour: samplesPerHour,
+      });
+    }
+
     const result = await storeObservations(
       client,
       provider.id,
       batch,
-      getConfig().firmsRawRetentionHours,
-      getConfig().firmsRawSamplesPerHour,
+      retentionHours,
+      samplesPerHour,
     );
     if (batch.scopes)
       await client.query(
@@ -70,8 +94,9 @@ export async function ingest(
         [provider.id, now, JSON.stringify(batch.scopes)],
       );
     let latest: string | null = null;
-    for (const o of batch.observations)
-      if (!latest || o.timestamp > latest) latest = o.timestamp;
+    for (const observation of batch.observations)
+      if (!latest || observation.timestamp > latest)
+        latest = observation.timestamp;
     await client.query(
       "UPDATE provider_runs SET status='success',finished_at=now(),records_inserted=$2,records_updated=$3,coverage_start=$4,coverage_end=$5,source_as_of=$6,latest_observation_at=$7 WHERE id=$1",
       [

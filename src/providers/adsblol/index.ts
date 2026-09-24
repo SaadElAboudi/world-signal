@@ -1,3 +1,4 @@
+import { createBudgetedFetch } from "../../server/budgeted-fetch";
 import { DataError } from "../../server/log";
 import { createHash } from "node:crypto";
 import { latLngToCell } from "h3-js";
@@ -206,7 +207,7 @@ export class AdsbLolProvider implements ObservationProvider<RawData> {
       sentinels?: readonly AviationSentinel[];
     } = {},
   ) {
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? createBudgetedFetch("adsblol");
     this.pause = options.fetchImpl
       ? async () => {}
       : (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -220,7 +221,7 @@ export class AdsbLolProvider implements ObservationProvider<RawData> {
     for (const sentinel of this.sentinels) {
       if (snapshots.length) await this.pause(5000);
       const url = `${this.endpoint}/v2/point/${sentinel.latitude}/${sentinel.longitude}/${sentinel.radiusNm}`;
-      let response = await this.fetchImpl(url, {
+      const response = await this.fetchImpl(url, {
         headers: {
           accept: "application/json",
           "user-agent":
@@ -230,21 +231,7 @@ export class AdsbLolProvider implements ObservationProvider<RawData> {
       });
       if (response.status === 429) {
         await response.body?.cancel();
-        const seconds = Number(response.headers.get("retry-after") ?? 10);
-        await this.pause(
-          Math.min(
-            30000,
-            Math.max(2000, Number.isFinite(seconds) ? seconds * 1000 : 10000),
-          ),
-        );
-        response = await this.fetchImpl(url, {
-          headers: {
-            "user-agent":
-              "WORLD-SIGNAL/0.3 (https://github.com/SaadElAboudi/world-signal)",
-            accept: "application/json",
-          },
-          signal: AbortSignal.timeout(10000),
-        });
+        throw new DataError("upstream_http_429");
       }
       if (!response.ok) throw new DataError(`upstream_http_${response.status}`);
       const parsed = responseSchema.safeParse(await response.json());

@@ -1,3 +1,4 @@
+import { createBudgetedFetch } from "../../server/budgeted-fetch";
 import type { WorldSignal, SignalType } from "../../core/types";
 import type { CorrelatedEvent } from "../../correlations/types";
 import type { ContextEvidence, ContextProvider } from "../evidence";
@@ -115,7 +116,7 @@ export class GdeltContextProvider implements ContextProvider {
   private readonly now: () => Date;
 
   constructor(options: GdeltContextProviderOptions = {}) {
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? createBudgetedFetch("context");
     this.endpoint = options.endpoint ?? DEFAULT_ENDPOINT;
     this.maxRecords = Math.max(1, Math.min(50, options.maxRecords ?? 25));
     this.now = options.now ?? (() => new Date());

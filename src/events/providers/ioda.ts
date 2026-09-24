@@ -1,3 +1,4 @@
+import { createBudgetedFetch } from "../../server/budgeted-fetch";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -114,7 +115,7 @@ export class IodaInternetOutageProvider implements EventProvider {
       endpoint?: string;
     } = {},
   ) {
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? createBudgetedFetch("ioda");
     this.resolveLocation = options.resolveLocation ?? defaultCountryLocation;
     this.endpoint = options.endpoint ?? `${API_ROOT}/outages/events`;
   }

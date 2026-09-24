@@ -106,7 +106,10 @@ export async function getSnapshot(
       correlationAsOf: correlationRun.rows[0]?.as_of?.toISOString() ?? null,
 
       mode: "live",
-      collectionCadenceMinutes: getConfig().collectionCadenceMinutes,
+      collectionCadenceMinutes: Math.max(
+        getConfig().collectionCadenceMinutes,
+        ...providers.map((p) => p.cadenceMinutes ?? 0),
+      ),
       asOf: now.toISOString(),
       providers,
       status: aggregateHealth(providers),

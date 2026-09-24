@@ -93,8 +93,11 @@ test("French, grouped evidence and reported events remain understandable and usa
   ).toBeVisible();
   await page.keyboard.press("Escape");
   await page.getByRole("tab", { name: "Événements signalés" }).click();
-  await expect(page.locator(".signal-card")).toHaveCount(1);
-  await page.locator(".signal-card").click();
+  await expect(page.locator(".signal-card")).toHaveCount(3);
+  await page
+    .locator(".signal-card")
+    .filter({ hasText: "Paris · vent fort" })
+    .click();
   await expect(
     page.getByRole("region", { name: "Détails de l’événement" }),
   ).toBeVisible();
@@ -103,12 +106,17 @@ test("French, grouped evidence and reported events remain understandable and usa
   await expect(page.locator(".earth-loading")).toHaveCount(0, {
     timeout: 60000,
   });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
   await page.screenshot({
     path: `test-results/${info.project.name}-fr-events.png`,
     fullPage: true,
   });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Risques naturels" }).click();
+  await page.getByRole("button", { name: "Mobilité" }).click();
   await expect(
     page.getByText("Aucun événement dans cette période"),
   ).toBeVisible();

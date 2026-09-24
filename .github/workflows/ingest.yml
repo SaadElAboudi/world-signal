@@ -1,7 +1,7 @@
-name: Collect real observations
+name: Collect world state
 on:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "17 */4 * * *"
   workflow_dispatch:
 permissions:
   contents: read
@@ -12,21 +12,37 @@ jobs:
   ingest:
     if: vars.WORLD_SIGNAL_INGEST_ENABLED == 'true'
     runs-on: ubuntu-latest
-    # Bound scheduled runner usage; delayed/missed jobs remain visible as stale data.
-    timeout-minutes: 5
+    # Six bounded passes/day: at most 1,488 scheduled runner minutes in 31 days.
+    # CI and manual runs use additional minutes; account-wide limits remain external.
+    timeout-minutes: 8
     env:
       DATABASE_URL: ${{ secrets.WORLD_SIGNAL_DATABASE_URL }}
       DATABASE_SSL_CA: ${{ secrets.WORLD_SIGNAL_DATABASE_CA }}
       DATABASE_POOL_MAX: "2"
+      DATABASE_STORAGE_QUOTA_BYTES: "1073741824"
       WORLD_SIGNAL_MODE: live
-      WORLD_EVENT_REFRESH_ENABLED: "false"
+      WORLD_EVENT_REFRESH_ENABLED: "true"
       FIRMS_TRANSPORT: public
       FIRMS_RAW_RETENTION_HOURS: "48"
       FIRMS_RAW_SAMPLES_PER_CELL_HOUR: "5"
       USGS_STALE_MINUTES: "90"
       ANALYSIS_STALE_MINUTES: "90"
-      COLLECTION_CADENCE_MINUTES: "60"
-      FIRMS_INTERVAL_MINUTES: "30"
+      COLLECTION_CADENCE_MINUTES: "240"
+      USGS_INTERVAL_MINUTES: "240"
+      FIRMS_INTERVAL_MINUTES: "240"
+      OPEN_METEO_ENABLED: "true"
+      OPEN_METEO_ENDPOINT: ${{ vars.OPEN_METEO_ENDPOINT || 'https://api.open-meteo.com/v1/forecast' }}
+      OPEN_METEO_ARCHIVE_ENDPOINT: ${{ vars.OPEN_METEO_ARCHIVE_ENDPOINT || 'https://archive-api.open-meteo.com/v1/archive' }}
+      OPEN_METEO_MARINE_ENABLED: "true"
+      OPEN_METEO_MARINE_ENDPOINT: ${{ vars.OPEN_METEO_MARINE_ENDPOINT || 'https://marine-api.open-meteo.com/v1/marine' }}
+      OPEN_METEO_API_KEY: ${{ secrets.OPEN_METEO_API_KEY }}
+      IODA_ENABLED: "true"
+      IODA_ENDPOINT: ${{ vars.IODA_ENDPOINT || 'https://api.ioda.inetintel.cc.gatech.edu/v2/outages/events' }}
+      ADSB_LOL_ENABLED: "true"
+      ADSB_LOL_INTERVAL_MINUTES: "240"
+      ENTSOE_ENABLED: ${{ vars.ENTSOE_ENABLED || 'false' }}
+      ENTSOE_SECURITY_TOKEN: ${{ secrets.ENTSOE_SECURITY_TOKEN }}
+      ENTSOE_ENDPOINT: https://web-api.tp.entsoe.eu/api
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,5 +50,5 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - name: Ingest due providers, recompute signals and refresh context
+      - name: Collect, analyze, contextualize and compact
         run: npm run worker -- --once ${{ github.event_name == 'workflow_dispatch' && '--force' || '' }}

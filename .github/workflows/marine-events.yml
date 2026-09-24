@@ -1,7 +1,5 @@
-name: Refresh marine events
+name: Refresh marine events (manual)
 on:
-  schedule:
-    - cron: "41 * * * *"
   workflow_dispatch:
 permissions:
   contents: read
@@ -17,6 +15,7 @@ jobs:
       DATABASE_URL: ${{ secrets.WORLD_SIGNAL_DATABASE_URL }}
       DATABASE_SSL_CA: ${{ secrets.WORLD_SIGNAL_DATABASE_CA }}
       DATABASE_POOL_MAX: "2"
+      DATABASE_STORAGE_QUOTA_BYTES: "1073741824"
       WORLD_SIGNAL_MODE: live
       OPEN_METEO_MARINE_ENABLED: "true"
       OPEN_METEO_MARINE_ENDPOINT: ${{ vars.OPEN_METEO_MARINE_ENDPOINT || 'https://marine-api.open-meteo.com/v1/marine' }}

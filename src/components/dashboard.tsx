@@ -1,4 +1,5 @@
 "use client";
+import { worldFeed } from "@/events/feed";
 import { signalTitle } from "@/i18n/signals";
 import { useI18n, LanguageSwitch } from "@/i18n/context";
 import dynamic from "next/dynamic";
@@ -155,7 +156,13 @@ export default function Dashboard({
       }),
     [snapshot.signals, hours, asOf],
   );
-  const visibleWorldEvents = worldEvents.filter(
+  const allWorldEvents = worldFeed(worldEvents, snapshot.signals);
+  const eventsInWindow = allWorldEvents.filter(
+    (event) =>
+      Date.parse(event.updatedAt) >= Date.parse(asOf) - hours * 3600000 &&
+      Date.parse(event.updatedAt) <= Date.parse(asOf),
+  );
+  const visibleWorldEvents = eventsInWindow.filter(
     (event) =>
       (!eventCategory || event.category === eventCategory) &&
       (!significantOnly || event.severity === "significant") &&
@@ -165,6 +172,9 @@ export default function Dashboard({
         `${event.title} ${eventLabel(event, locale)} ${event.source.name}`
           .toLowerCase()
           .includes(query.toLowerCase())),
+  );
+  const feedSignal = snapshot.signals.find(
+    (s) => `signal:${s.id}` === worldEventId,
   );
   const selectedWorldEvent =
     visibleWorldEvents.find((e) => e.id === worldEventId) ?? null;
@@ -322,11 +332,20 @@ export default function Dashboard({
         <div className="header-actions">
           <LanguageSwitch />
           <button
+            aria-label={statusLabel}
             className={`demo-badge ${!demo && snapshot.status === "live" ? "live-badge" : ""}`}
             onClick={() => dialog.current?.showModal()}
           >
             <span />
             {statusLabel}
+            {!demo && snapshot.status !== "live" && (
+              <small className="provider-summary">
+                {snapshot.providers
+                  .filter((p) => p.status !== "healthy")
+                  .map((p) => p.name)
+                  .join(", ")}
+              </small>
+            )}
             <Icon name="info" size={13} />
           </button>
           <Link
@@ -376,7 +395,7 @@ export default function Dashboard({
                     {locale === "fr" ? fr : en}
                   </span>
                   <span className="layer-count">
-                    {worldEvents.filter((e) => e.category === id).length}
+                    {eventsInWindow.filter((e) => e.category === id).length}
                   </span>
                 </button>
               ))}
@@ -645,6 +664,7 @@ export default function Dashboard({
                 aria-selected={view === "events"}
                 onClick={() => {
                   setView("events");
+                  setTypes(LAYERS.map((layer) => layer.id));
                   setCountry(null);
                   setSelectedId(null);
                 }}
@@ -654,7 +674,12 @@ export default function Dashboard({
             </div>
           )}
           {view === "events" ? (
-            selectedWorldEvent ? (
+            feedSignal && selectedWorldEvent ? (
+              <SignalDetail
+                signal={feedSignal}
+                onClose={() => setWorldEventId(null)}
+              />
+            ) : selectedWorldEvent ? (
               <WorldEventDetail
                 event={selectedWorldEvent}
                 onClose={() => setWorldEventId(null)}
@@ -662,17 +687,13 @@ export default function Dashboard({
             ) : (
               <>
                 <div className="panel-heading">
-                  <span>
-                    {locale === "fr"
-                      ? "ÉVÉNEMENTS SIGNALÉS"
-                      : "REPORTED EVENTS"}
-                  </span>
+                  <span>{locale === "fr" ? "FLUX MONDIAL" : "WORLD FEED"}</span>
                   <span>{visibleWorldEvents.length}</span>
                 </div>
                 <div className="feed-subtitle">
                   {locale === "fr"
-                    ? "Mis à jour pendant la période sélectionnée"
-                    : "Updated within the selected time window"}
+                    ? "Observations et rapports récents · heures UTC"
+                    : "Recent observations and reports · UTC times"}
                 </div>
                 <div className="signal-list">
                   {!eventsAvailable && (
@@ -690,18 +711,35 @@ export default function Dashboard({
                     >
                       <div className="signal-card-top">
                         <span>◇ {eventLabel(event, locale)}</span>
-                        <time>
+                        <time
+                          dateTime={event.updatedAt}
+                          title={
+                            new Date(event.updatedAt).toLocaleString(locale, {
+                              timeZone: "UTC",
+                            }) + " UTC"
+                          }
+                        >
                           {new Date(event.updatedAt)
                             .toISOString()
                             .slice(11, 16)}
                         </time>
                       </div>
-                      <h3>{event.title}</h3>
+                      <h3>
+                        {event.properties.signalId
+                          ? signalTitle(
+                              snapshot.signals.find(
+                                (s) => s.id === event.properties.signalId,
+                              )!,
+                              locale,
+                            )
+                          : event.title}
+                      </h3>
                       <div className="signal-card-bottom">
                         <span>{event.source.name}</span>
                         <small>
-                          {event.location.latitude.toFixed(1)}°,{" "}
-                          {event.location.longitude.toFixed(1)}°
+                          {typeof event.properties.country === "string"
+                            ? countryName(event.properties.country)
+                            : `${event.location.latitude.toFixed(1)}°, ${event.location.longitude.toFixed(1)}°`}
                         </small>
                       </div>
                     </button>
@@ -1095,8 +1133,22 @@ export default function Dashboard({
                     )}
                     {provider.error && (
                       <p>
-                        {t("State:")}
-                        {t(provider.error.replaceAll("_", " "))}
+                        {t("State:")}{" "}
+                        {t(
+                          (
+                            {
+                              upstream_http_429:
+                                "Provider rate limit; collection is paused.",
+                              provider_cooldown:
+                                "Provider rate limit; collection is paused.",
+                              api_budget_exhausted:
+                                "API budget reached; collection is paused.",
+                              storage_budget_exhausted:
+                                "Storage budget reached; collection is paused.",
+                            } as Record<string, string>
+                          )[provider.error] ??
+                            provider.error.replaceAll("_", " "),
+                        )}
                       </p>
                     )}
                   </div>

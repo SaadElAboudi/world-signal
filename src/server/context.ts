@@ -11,6 +11,7 @@ import {
   getPersistedInvestigation,
   saveInvestigation,
 } from "../database/investigations";
+import { collectionGuard } from "./resource-budget";
 import { getSignal } from "./snapshot";
 
 const DEFAULT_CONTEXT_PROVIDERS = () => [
@@ -36,31 +37,38 @@ export async function getSignalInvestigation(
   mode: "demo" | "live",
   providers?: ContextProvider[],
 ) {
-  // Injected providers are primarily deterministic test/preview inputs. They must
-  // never be mixed with, or overwrite, the production investigation cache.
+  // Injected providers are deterministic test/preview inputs and never consume production budgets.
   if (providers) return buildSignalInvestigation(id, mode, providers);
-
   if (mode === "demo") return buildSignalInvestigation(id, mode, []);
 
-  const cached = await getPersistedInvestigation("signal", id);
+  const cached = await getPersistedInvestigation("signal", id, {
+    allowStale: true,
+  });
   if (cached) return cached;
-
-  // Web reads use a SELECT-only role; only scheduled workers persist context.
-  return buildSignalInvestigation(id, mode, DEFAULT_CONTEXT_PROVIDERS());
+  // Web requests never spend API quota or write with the reader role.
+  return buildSignalInvestigation(id, mode, []);
 }
 
 export async function refreshSignalInvestigation(
   id: string,
   options: { providers?: ContextProvider[]; ttlMs?: number; now?: Date } = {},
 ) {
+  const now = options.now ?? new Date();
+  if (!options.providers) {
+    const guard = await collectionGuard("context", { now });
+    if (!guard.allowed)
+      return getPersistedInvestigation("signal", id, { allowStale: true, now });
+  }
   const investigation = await buildSignalInvestigation(
     id,
     "live",
     options.providers ?? DEFAULT_CONTEXT_PROVIDERS(),
   );
   if (!investigation) return null;
+  // Explicit providers remain ephemeral so fixtures can never overwrite production cache.
+  if (options.providers) return investigation;
   await saveInvestigation("signal", investigation, {
-    now: options.now,
+    now,
     ttlMs: options.ttlMs,
   });
   return investigation;
@@ -76,8 +84,6 @@ export async function getCorrelatedEventInvestigation(
     now?: Date;
   } = {},
 ) {
-  // As with signal investigations, explicit providers indicate deterministic
-  // test/preview execution and remain intentionally ephemeral.
   if (options.providers) {
     return buildInvestigation(event, {
       providers: options.providers,
@@ -86,20 +92,37 @@ export async function getCorrelatedEventInvestigation(
     });
   }
 
+  const now = options.now ?? new Date();
   if (!options.forceRefresh) {
     const cached = await getPersistedInvestigation(
       "correlated_event",
       event.id,
+      { now },
     );
     if (cached) return cached;
   }
+
+  const guard = await collectionGuard("context", { now });
+  if (!guard.allowed) {
+    const stale = await getPersistedInvestigation(
+      "correlated_event",
+      event.id,
+      {
+        allowStale: true,
+        now,
+      },
+    );
+    if (stale) return stale;
+    return buildInvestigation(event, { providers: [], signals, now });
+  }
+
   const investigation = await buildInvestigation(event, {
     providers: DEFAULT_CONTEXT_PROVIDERS(),
     signals,
-    now: options.now,
+    now,
   });
   await saveInvestigation("correlated_event", investigation, {
-    now: options.now,
+    now,
     ttlMs: options.ttlMs,
   });
   return investigation;

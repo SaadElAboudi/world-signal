@@ -1,3 +1,4 @@
+import { createBudgetedFetch } from "../../server/budgeted-fetch";
 import type { WorldSignal, SignalType } from "../../core/types";
 import type { CorrelatedEvent } from "../../correlations/types";
 import type { ContextEvidence, ContextProvider } from "../evidence";
@@ -123,7 +124,7 @@ export class GdacsContextProvider implements ContextProvider {
   private readonly now: () => Date;
 
   constructor(options: GdacsContextProviderOptions = {}) {
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? createBudgetedFetch("context");
     this.endpoint = options.endpoint ?? DEFAULT_ENDPOINT;
     this.now = options.now ?? (() => new Date());
   }

@@ -134,8 +134,9 @@ export const LAYERS: {
     description: "Regional air traffic",
   },
 ];
-export const SEVERITY_COLOR: Record<Severity, string> = {
+export const SEVERITY_COLOR: Record<Severity | "info", string> = {
   significant: "#ff746b",
   elevated: "#f5b75f",
   notable: "#e5d785",
+  info: "#78909a",
 };

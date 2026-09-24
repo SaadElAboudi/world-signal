@@ -1,35 +1,153 @@
-# Hosted operation on a free PostgreSQL plan
+# Hosted operation on free tiers
 
-The production web application runs on Vercel. Its database is a dedicated Aiven PostgreSQL `free-1-1gb` service. Vercel uses a read-only database role; the collector uses a separate role with data-write and temporary-table permissions. Both connections verify TLS against the provider CA. Provider API tokens and database credentials stay outside Git.
+WORLD SIGNAL is deliberately operated as a **bounded observatory**, not as a raw mirror of every upstream feed. Production runs on Vercel with a dedicated Aiven PostgreSQL `free-1-1gb` service. Vercel uses a read-only database role; the collector uses a separate write role. Provider tokens and database credentials stay outside Git.
 
-## Storage profile
+## The three budgets
 
-Production uses `FIRMS_RAW_RETENTION_HOURS=48` and `FIRMS_RAW_SAMPLES_PER_CELL_HOUR=5`:
+The free deployment has three independent resources to protect:
 
-- Every validated, qualified NOAA-20 detection contributes to exact hourly H3-cell counts, quality sums and FRP sums/counts. Statistical calculations use **all qualified detections**, not the raw sample.
-- Keep up to five representative raw observations per cell per hour for 48 hours, preferring qualified detections. These support clickable-signal evidence IDs. They are not a complete pixel archive.
-- Keep hourly aggregates and explicit successful-hour coverage for 35 days. Missing hours remain unknown. Zero detections are inferred only within fully covered source hours.
-- A complete feed replaces covered hourly aggregates atomically with raw sample updates. Repeated imports do not double-count; older feeds cannot overwrite newer aggregate revisions or retractions. A failed transaction cannot expose partial new history.
-- Full USGS observations remain for 35 days. Old resolved signals expire after 35 days, provider runs after 40 days. Evidence snapshots are written only when calculation evidence changes; beyond two days, retain the latest snapshot per signal per UTC day, up to 35 days.
+1. **PostgreSQL disk** — the Aiven free PostgreSQL service currently has a 1 GiB disk budget.
+2. **External APIs** — some providers publish quotas, some do not, and terms can change.
+3. **GitHub Actions minutes** — the account has a finite shared allowance; CI, manual jobs, and other repositories also consume it.
 
-In compact mode, the baseline engine reads aggregate coverage rather than older raw-ingestion records. Enabling this mode on an existing database therefore requires a historical ingestion before old references become available. It never treats unaggregated history as zero.
+A system that respects only API quotas can still fail because of database growth or scheduler minutes. WORLD SIGNAL therefore governs all three.
 
-The first successful hosted import analyzed 514,805 fire detections and retained 29,617 raw samples and 32,292 hourly cell aggregates. The database measured approximately 109 MB at that snapshot. Volume changes with real activity; retention reduces growth but is not a guarantee that an extreme workload can never reach the provider quota. Monitor the provider's usage dashboard. No paid plan or automatic upgrade has been activated.
+## Storage governor
 
-## Automatic collection
+Set:
 
-`.github/workflows/ingest.yml` runs at minute 17 of each hour and can also be dispatched manually. It requires repository variable `WORLD_SIGNAL_INGEST_ENABLED=true` and secrets `WORLD_SIGNAL_DATABASE_URL` and `WORLD_SIGNAL_DATABASE_CA`. Manual dispatch forces a fresh collection from both sources; scheduled runs respect provider intervals. The worker performs one bounded pass with `npm run worker -- --once`: collect due providers, refresh wider history daily, recompute signals and apply retention.
+```sh
+DATABASE_STORAGE_QUOTA_BYTES=1073741824
+```
 
-Each job has a two-minute timeout, limiting scheduled runner allocation to at most 1,488 minutes for a 31-day month, excluding manual runs, CI and other repositories. This uses the GitHub account's included Actions allowance; actual account usage and billing controls still apply. No paid runner is configured. GitHub schedules are best-effort and can be delayed or skipped; failed jobs do not invent fresh data.
+`pg_database_size(current_database())` is checked by the collector and mapped to four pressure levels:
 
-Production displays an approximately hourly collection cadence. Its USGS and analysis freshness budgets are 90 minutes; NASA's source budget remains four hours, with the separate latest-observation limit. A missed schedule eventually shows delayed data. A persistent worker can still run every five minutes on an independently hosted machine; the hourly schedule is the current low-cost deployment configuration, not a claim of second-by-second updates.
+| Pressure | Database usage | Default response |
+| --- | ---: | --- |
+| `normal` | <55% | normal compact retention |
+| `watch` | ≥55% | shorten secondary history and representative raw fire evidence |
+| `conserve` | ≥70% | stronger compaction |
+| `critical` | ≥82% | preserve current state/baselines, aggressively shorten expendable history, keep collection paused |
+
+At a 1 GiB quota, those thresholds are roughly 563 MiB, 717 MiB and 840 MiB. Observation and event collection is blocked at 65% to leave headroom below the 70% target. Maintenance runs before collection. PostgreSQL deletes create reusable space without immediately shrinking database files; WAL and service-wide disk usage are not measured by pg_database_size. A single batch and concurrent writes can exceed the target; this is an operational guard, not a storage-size guarantee.
+
+### Adaptive retention
+
+Normal hosted profile:
+
+- representative FIRMS raw observations: 48 h / up to five samples per cell-hour;
+- fire hourly aggregates and coverage: 35 days;
+- USGS observations: 35 days;
+- resolved signals: 35 days;
+- provider runs: 40 days;
+- universal-event state history: 30 days;
+- resolved universal events: 35 days.
+
+Under `critical` pressure this contracts to approximately:
+
+- representative FIRMS raw observations: 12 h / one sample per cell-hour;
+- fire aggregate history: 14 days;
+- observation/signal history: 14 days;
+- provider-run history: 14 days;
+- universal-event history: 7 days;
+- resolved universal events: 14 days.
+
+The order matters: WORLD SIGNAL discards **duplicative/raw evidence before current state and compact baselines**. Shortened history can make matched baselines unavailable; this must remain unknown, never a fabricated normal measurement.
+
+The first documented hosted import analyzed 514,805 fire detections while retaining only 29,617 representative raw samples and 32,292 hourly cell aggregates; the database was approximately 109 MB at that snapshot. Real activity varies, so the governor is still required.
+
+## API-call governor
+
+`api_usage_daily` contains one tiny row per provider per UTC day. Each actual outgoing request reserves quota transactionally before the network call, including retries. Provider-wide transaction locks serialize concurrent daily/monthly reservations; zero limits disable calls. Multi-location Open-Meteo queries reserve per-location units, with an additional conservative factor for long archive ranges. These internal units are not a replica of vendor billing. HTTP 429 persists Retry-After across worker restarts. If the daily or monthly internal budget would be crossed, the collector returns `budget_limited` instead of calling the provider.
+
+Default WORLD SIGNAL safety caps:
+
+| Provider group | Daily internal units | Monthly internal units |
+| --- | ---: | ---: |
+| EONET | 200 | 5,000 |
+| Open-Meteo weather + archive + marine | 5,000 | 120,000 |
+| IODA (country time series and events combined) | 500 | 14,000 |
+| ADSB.lol | 2,500 | 70,000 |
+| ENTSO-E | 200 | 5,000 |
+| Context (GDELT + GDACS) | 2,500 | 60,000 |
+
+These are **internal safety limits**, not assertions about upstream quotas. Provider terms remain authoritative and must be reviewed before raising them. The Open-Meteo free endpoint is suitable only under its current non-commercial/evaluation terms; a commercial WORLD SIGNAL deployment must use the appropriate commercial endpoint/plan or another licensed source.
+
+Context retrieval degrades safely: when its external-call budget is exhausted, an existing stale investigation can be reused rather than creating unbounded searches.
+
+Inspect the live budgets with:
+
+```sh
+npm run ops:status
+```
+
+The command prints database MiB, quota percentage, pressure state and current provider call counts without exposing credentials.
+
+## GitHub Actions budget
+
+The private repository must stay within the account's included Actions minutes. Running separate 5-minute and 15-minute cron workflows would create thousands of jobs per month before CI is counted.
+
+Production therefore uses **one scheduled workflow every four hours**: `.github/workflows/ingest.yml`. One checkout + one `npm ci` performs the bounded worker pass for:
+
+- USGS;
+- FIRMS;
+- signal computation;
+- EONET;
+- Open-Meteo weather/climatology;
+- IODA;
+- Open-Meteo Marine;
+- ADSB.lol aviation sentinels;
+- ENTSO-E when explicitly enabled;
+- Context Engine refresh;
+- retention/compaction.
+
+At six scheduled starts/day and an eight-minute job timeout, the scheduled envelope is at most 1,488 runner minutes in a 31-day month. CI, manual jobs, and other repositories add usage; this is not an account-wide billing guarantee. The old fast refresh workflows remain available via `workflow_dispatch` for manual diagnostics but have **no automatic schedule** in the free-tier profile.
+
+The code still supports faster provider cadences. A future persistent/self-hosted worker can restore 5–15 minute collection without consuming GitHub-hosted runner minutes.
+
+## ENTSO-E power layer
+
+The first power layer stores one actual-load value per selected European bidding zone per hour. It does **not** mirror ENTSO-E datasets and does not claim to detect every household/grid outage.
+
+It is opt-in:
+
+```sh
+ENTSOE_ENABLED=true
+ENTSOE_SECURITY_TOKEN=...
+```
+
+To obtain API access, register on the ENTSO-E Transparency Platform, request REST API access according to ENTSO-E's current process, generate a token, then store it as the GitHub secret `ENTSOE_SECURITY_TOKEN` and set repository variable `ENTSOE_ENABLED=true`.
+
+The detector requires at least seven historical matched same-UTC-hour weekday/weekend samples. A 20%/35%/50% load reduction maps to notable/elevated/significant. The resulting event is `power_grid_anomaly`; it is explicitly **not** a confirmed customer `power_outage` and no cause is inferred.
+
+## Failure semantics
+
+Provider failure never means recovery:
+
+- Open-Meteo failure does not resolve weather events;
+- IODA failure does not imply Internet recovery;
+- ADSB.lol failure does not resolve aviation disruption;
+- partial ENTSO-E coverage does not resolve missing regional power events;
+- budget exhaustion is reported as a degraded collection state, not as absence of an event;
+- demo data is never substituted into live mode.
 
 ## Release and verification
 
-Run migrations using an administrative connection before deploying code that requires new tables. The Vercel reader and GitHub collector deliberately cannot modify the schema. Local credentials for administration are stored in ignored `.env.aiven-production.local`; do not copy them into the browser or commit them.
+Database migrations must run before collectors use new tables. Run them once with the administrator role before deploying. Scheduled jobs intentionally never run migrations with their restricted worker credentials.
 
-Verify `/api/signals?mode=live` and `/api/providers/status` on the production domain, both provider timestamps, a quake detail, a fire detail and a successful collector workflow run. `npm run db:check` checks whichever environment is explicitly configured, not necessarily production.
+Useful checks:
 
-Sensitive Vercel variables cannot be recovered with `vercel env pull`; empty/redacted pulled values do not mean the deployed runtime lacks them. Retrieve administrative connection details through the database provider's authorized interface instead. Use a nonstandard local filename such as `.env.hosted.local` so a download cannot silently override Next.js local development settings.
+```sh
+npm run db:check
+npm run ops:status
+npm run lint
+npm run typecheck
+npm test
+npm run test:db
+npm run build
+npm run test:e2e
+```
 
-Sources: [Aiven free plan](https://aiven.io/docs/products/postgresql/concepts/pg-free-tier), [Vercel sensitive variables](https://vercel.com/docs/environment-variables/sensitive-environment-variables).
+Production verification should include `/api/signals?mode=live`, `/api/events?status=active`, `/api/providers/status`, one signal detail, one contextual investigation, World Feed, and the scheduled collector workflow.
+
+No paid plan or automatic database upgrade is enabled by this repository. Any quota increase remains an explicit operator decision.

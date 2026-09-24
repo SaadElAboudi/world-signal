@@ -1,3 +1,4 @@
+import { createBudgetedFetch } from "../../server/budgeted-fetch";
 import type {
   EventCategory,
   EventProvider,
@@ -130,7 +131,7 @@ function severityFor(event: EonetEvent, type: EventType): EventSeverity {
 export class EonetEventProvider implements EventProvider {
   readonly id = "eonet";
   readonly name = "NASA EONET";
-  constructor(private readonly fetcher: typeof fetch = fetch) {}
+  constructor(private readonly fetcher: typeof fetch = createBudgetedFetch("eonet")) {}
 
   async fetchEvents(
     options: { now?: Date; days?: number; limit?: number } = {},

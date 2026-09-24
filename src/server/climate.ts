@@ -1,3 +1,4 @@
+import { createBudgetedFetch } from "./budgeted-fetch";
 import type { WorldEvent } from "../events/types";
 import { fetchText } from "../providers/http";
 import {
@@ -36,7 +37,8 @@ async function fetchReference(
   kind: TemperatureExtremeKind,
   options: Options,
 ): Promise<StoredTemperatureReference> {
-  const endpoint = options.endpoint ?? "https://archive-api.open-meteo.com/v1/archive";
+  const endpoint =
+    options.endpoint ?? "https://archive-api.open-meteo.com/v1/archive";
   const url = new URL(endpoint);
   url.searchParams.set("latitude", String(event.location.latitude));
   url.searchParams.set("longitude", String(event.location.longitude));
@@ -47,7 +49,7 @@ async function fetchReference(
   url.searchParams.set("models", "era5");
   if (options.apiKey) url.searchParams.set("apikey", options.apiKey);
   const { text } = await fetchText(url.toString(), {
-    fetcher: options.fetcher ?? fetch,
+    fetcher: options.fetcher ?? createBudgetedFetch("open-meteo"),
     attempts: 2,
     timeoutMs: 30_000,
   });
@@ -66,14 +68,18 @@ async function fetchReference(
   };
 }
 
-function applyReference(event: WorldEvent, reference: StoredTemperatureReference) {
+function applyReference(
+  event: WorldEvent,
+  reference: StoredTemperatureReference,
+) {
   if (event.magnitude.value === null) return event;
   const anomaly = temperatureAnomaly(event.magnitude.value, reference);
   const sign = anomaly.deltaC >= 0 ? "+" : "";
   return {
     ...event,
     title: `${event.title} · ${sign}${anomaly.deltaC.toFixed(1)}°C vs 1991–2020`,
-    description: `${event.description ?? ""} ERA5 climatology for the same seasonal window: ${reference.meanC.toFixed(1)}°C mean (${reference.sampleCount} daily samples, ±7 calendar days across 1991–2020).`.trim(),
+    description:
+      `${event.description ?? ""} ERA5 climatology for the same seasonal window: ${reference.meanC.toFixed(1)}°C mean (${reference.sampleCount} daily samples, ±7 calendar days across 1991–2020).`.trim(),
     properties: {
       ...event.properties,
       climateReference: "ERA5 1991-2020 seasonal-window-v1",
@@ -99,7 +105,10 @@ export async function enrichWeatherWithClimatology(
   let created = 0;
   const output: WorldEvent[] = [];
   for (const event of events) {
-    if (event.type !== "temperature_extreme" || typeof event.properties.cellId !== "string") {
+    if (
+      event.type !== "temperature_extreme" ||
+      typeof event.properties.cellId !== "string"
+    ) {
       output.push(event);
       continue;
     }
@@ -116,9 +125,9 @@ export async function enrichWeatherWithClimatology(
         key,
       );
       if (!reference && created < MAX_NEW_REFERENCES_PER_REFRESH) {
+        created++;
         reference = await fetchReference(event, kind, options);
         await saveTemperatureReference(reference);
-        created++;
       }
       output.push(reference ? applyReference(event, reference) : event);
     } catch (error) {

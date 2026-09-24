@@ -24,7 +24,9 @@ if (!testUrl && liveUrl) {
   }
 }
 if (!testUrl || !new URL(testUrl).pathname.endsWith("_test")) {
-  throw new Error("TEST_DATABASE_URL must name a dedicated database ending in _test");
+  throw new Error(
+    "TEST_DATABASE_URL must name a dedicated database ending in _test",
+  );
 }
 process.env.DATABASE_URL = testUrl;
 
@@ -178,4 +180,36 @@ test("climate reference cache stores compact statistics only", async () => {
   const names = columns.rows.map((row) => row.column_name);
   assert.equal(names.includes("payload"), false);
   assert.equal(names.includes("raw_data"), false);
+});
+
+test("bulk refresh preserves mixed counts and rolls back an invalid batch atomically", async () => {
+  const batch = Array.from({ length: 500 }, (_, i) => ({
+    ...event,
+    id: `bulk:${i}`,
+    source: { ...event.source, upstreamId: `bulk:${i}` },
+  }));
+  assert.deepEqual(await upsertWorldEvents(batch), {
+    inserted: 500,
+    updated: 0,
+    unchanged: 0,
+  });
+  const mixed = batch.map((item, i) =>
+    i < 250 ? { ...item, title: "Revised" } : item,
+  );
+  assert.deepEqual(await upsertWorldEvents(mixed), {
+    inserted: 0,
+    updated: 250,
+    unchanged: 250,
+  });
+  await assert.rejects(
+    upsertWorldEvents([
+      { ...batch[0], title: "Must roll back" },
+      { ...batch[1], location: { ...event.location, latitude: 999 } },
+    ]),
+  );
+  assert.equal((await getWorldEvent(batch[0].id))?.title, "Revised");
+  const history = await getPool().query(
+    "SELECT count(*)::int AS count FROM world_event_history WHERE event_id LIKE 'bulk:%'",
+  );
+  assert.equal(history.rows[0].count, 250);
 });

@@ -87,6 +87,14 @@ export async function getProviderHealth(
       now,
     ),
   );
+  const settings = await getPool().query(
+    "SELECT cadence_minutes FROM collection_settings WHERE id=true",
+  );
+  const cadence = Number(settings.rows[0]?.cadence_minutes);
+  if (Number.isFinite(cadence)) {
+    for (const state of states)
+      state.cadenceMinutes = Math.max(state.cadenceMinutes ?? 0, cadence);
+  }
   const scopes = await getPool().query(
     "SELECT provider,count(*)::int AS configured,count(*) FILTER(WHERE ok)::int AS available,count(*) FILTER(WHERE ok AND latest_observation_at>$1::timestamptz-interval '3 hours')::int AS fresh FROM provider_scopes GROUP BY provider",
     [now],

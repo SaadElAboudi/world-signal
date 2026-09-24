@@ -60,7 +60,7 @@ export function getConfig() {
     firmsKey: process.env.NASA_FIRMS_API_KEY,
     usgsIntervalMinutes: numberEnv("USGS_INTERVAL_MINUTES", 5, 5),
     firmsIntervalMinutes: numberEnv("FIRMS_INTERVAL_MINUTES", 60, 30),
-    adsbLolIntervalMinutes: numberEnv("ADSB_LOL_INTERVAL_MINUTES", 15, 10, 120),
+    adsbLolIntervalMinutes: numberEnv("ADSB_LOL_INTERVAL_MINUTES", 15, 10, 1440),
     usgsStaleMinutes: numberEnv("USGS_STALE_MINUTES", 20, 5),
     firmsStaleMinutes: numberEnv("FIRMS_STALE_MINUTES", 240, 30),
     adsbLolStaleMinutes: numberEnv("ADSB_LOL_STALE_MINUTES", 45, 15, 360),
