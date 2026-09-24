@@ -27,13 +27,24 @@ export class IodaProvider implements ObservationProvider<NormalizedBatch> {
   id = "ioda";
   name = "IODA · active probing";
   type = "internet" as const;
+  constructor(
+    private readonly options: {
+      fetcher?: typeof fetch;
+      now?: () => number;
+    } = {},
+  ) {}
   async fetchRawData(
     context: FetchContext,
   ): Promise<RawBatch<NormalizedBatch>> {
     const until = Math.floor(context.now.getTime() / 3600000) * 3600;
     const from = until - (context.history ? 32 * 24 : 4) * 3600;
     const configured = internetCountries();
+    const clock = this.options.now ?? Date.now;
+    const deadline = clock() + 90_000;
+    const fetcher = this.options.fetcher ?? createBudgetedFetch("ioda");
     const results = await mapLimited(configured, 4, async (country) => {
+      const remaining = deadline - clock();
+      if (remaining <= 0) throw new DataError("collection_time_budget");
       const url = new URL(
         `https://api.ioda.inetintel.cc.gatech.edu/v2/signals/raw/country/${country.code}`,
       );
@@ -44,9 +55,11 @@ export class IodaProvider implements ObservationProvider<NormalizedBatch> {
         maxPoints: String((until - from) / 3600),
       }).toString();
       const { text } = await fetchText(url.toString(), {
-        timeoutMs: 12000,
-        attempts: 2,
-        fetcher: createBudgetedFetch("ioda"),
+        timeoutMs: Math.min(12000, remaining),
+        // Forty countries must not spend four minutes retrying an unavailable API.
+        // Failed scopes retain their prior observations; the next pass retries them.
+        attempts: 1,
+        fetcher,
       });
       const envelope = JSON.parse(text);
       if (envelope.error || !Array.isArray(envelope.data))
