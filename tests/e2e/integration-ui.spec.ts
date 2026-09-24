@@ -106,6 +106,11 @@ test("French, grouped evidence and reported events remain understandable and usa
   await expect(page.locator(".earth-loading")).toHaveCount(0, {
     timeout: 60000,
   });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
   await page.screenshot({
     path: `test-results/${info.project.name}-fr-events.png`,
     fullPage: true,

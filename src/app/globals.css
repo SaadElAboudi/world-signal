@@ -1932,3 +1932,21 @@ button svg {
 @media (max-width: 760px) {
   .provider-summary { max-width: 95px; }
 }
+
+@media (max-width: 760px) {
+  .topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    height: auto;
+    min-height: 96px;
+    gap: 10px;
+    padding: 12px 16px;
+  }
+  .header-actions { display: contents; }
+  .header-middle { display: none; }
+  .brand { grid-column: 1; grid-row: 1; }
+  .language-switch { grid-column: 2; grid-row: 1; justify-self: end; }
+  .demo-badge { grid-column: 1; grid-row: 2; min-width: 0; justify-self: start; }
+  .mode-switch { grid-column: 2; grid-row: 2; font-size: 11px; }
+  .language-switch button { padding: 6px; }
+}
