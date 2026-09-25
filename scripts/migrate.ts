@@ -64,10 +64,13 @@ export async function migrate() {
 if (process.argv[1]?.endsWith("migrate.ts"))
   migrate()
     .then(closePool)
-    .catch(async () => {
+    .catch(async (error) => {
+      // Surface the migration name/checksum failure in CI without logging connection data.
+      // PostgreSQL errors can otherwise make production recovery needlessly opaque.
       console.error(
         "Migration failed. Check database availability and migration checksums.",
       );
+      console.error(error instanceof Error ? error.message : "Unknown migration error");
       await closePool();
       process.exitCode = 1;
     });
