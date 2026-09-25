@@ -39,6 +39,8 @@ test("IODA outage provider emits compact infrastructure events", async () => {
   assert.equal(event.type, "internet_outage");
   assert.equal(event.status, "active");
   assert.equal(event.severity, "notable");
+  assert.match(event.title, /Unusual network activity/);
+  assert.equal(event.confidence, 0.55);
   assert.equal(event.magnitude.value, 1200);
   assert.equal(
     event.properties.severityMethod,

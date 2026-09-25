@@ -1,5 +1,5 @@
 import { getPool } from "../database/client";
-import { correlate, reconcileEvents } from "../correlations/engine";
+import { CORRELATION_METHOD, correlate, reconcileEvents } from "../correlations/engine";
 import { scopeForSignal } from "../correlations/geography";
 import type {
   CorrelatedEvent,
@@ -73,9 +73,13 @@ export async function computeCorrelations(now = new Date()) {
         continue;
       chosen.push(event);
     }
+    // A revised compatibility model must be allowed to retire old candidates.
+    // Keeping correlations created under an earlier method would otherwise
+    // preserve relationships that the current semantic gate rejects.
     const previous = (
       await client.query(
-        "SELECT payload FROM correlated_events WHERE status='active'",
+        "SELECT payload FROM correlated_events WHERE status='active' AND payload->>'methodology'=$1",
+        [CORRELATION_METHOD],
       )
     ).rows.map((r) => r.payload as CorrelatedEvent);
     const health = await getProviderHealth(now);

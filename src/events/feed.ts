@@ -72,7 +72,9 @@ export function worldFeed(events: WorldEvent[], signals: WorldSignal[]) {
 /**
  * Keep raw observations available to the map and API, but collapse repeated
  * thermal-cluster cards in the human feed. A group is intentionally narrow:
- * same country and the same UTC hour, with at least three distinct clusters.
+ * same country and UTC day, with at least two distinct clusters. Individual
+ * clusters stay available on the map and in source evidence; the main feed is
+ * intentionally about situations, not a list of satellite pixels.
  */
 export function compactFeedEvents(events: WorldEvent[]) {
   const groups = new Map<string, WorldEvent[]>();
@@ -84,15 +86,15 @@ export function compactFeedEvents(events: WorldEvent[]) {
       typeof signalId === "string" &&
       typeof country === "string";
     if (!eligible) continue;
-    const hour = new Date(event.startedAt).toISOString().slice(0, 13);
-    const key = `${country}:${hour}`;
+    const day = new Date(event.startedAt).toISOString().slice(0, 10);
+    const key = `${country}:${day}`;
     const members = groups.get(key) ?? [];
     members.push(event);
     groups.set(key, members);
   }
   const compacted = new Map(events.map((event) => [event.id, event]));
   for (const [key, members] of groups) {
-    if (members.length < 3) continue;
+    if (members.length < 2) continue;
     const [country] = key.split(":");
     const primary = [...members].sort(
       (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
@@ -100,7 +102,7 @@ export function compactFeedEvents(events: WorldEvent[]) {
     compacted.set(primary.id, {
       ...primary,
       title: `Unusual thermal activity — ${country}`,
-      description: `${members.length} independent thermal-anomaly clusters were detected in this country during the same UTC hour. This is a feed summary, not a verified single wildfire incident.`,
+      description: `${members.length} independent thermal-anomaly clusters were detected in this country during the same UTC day. This is a feed summary, not a verified single wildfire incident.`,
       magnitude: { value: null, unit: null, description: primary.magnitude.description },
       properties: {
         ...primary.properties,

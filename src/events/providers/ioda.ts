@@ -167,15 +167,15 @@ export class IodaInternetOutageProvider implements EventProvider {
         id,
         category: "infrastructure",
         type: "internet_outage",
-        title: `Internet outage detected in ${row.location_name}`,
+        title: `Unusual network activity detected in ${row.location_name}`,
         description:
-          "IODA detected a macroscopic Internet connectivity disruption from network measurements.",
+          "IODA recorded an unusual network measurement event. This alone does not establish an Internet outage, its impact or its cause.",
         status: active ? "active" : "resolved",
         // IODA exposes a score, but WORLD SIGNAL does not currently have a
         // documented calibration that maps it to impact severity. Preserve the
         // score as source evidence instead of inventing significance bands.
         severity: "notable",
-        confidence: 0.75,
+        confidence: 0.55,
         startedAt: startedAt.toISOString(),
         // Source observation time, not polling time: unchanged historical
         // outages must not create another archived version every five minutes.
@@ -213,6 +213,7 @@ export class IodaInternetOutageProvider implements EventProvider {
           overlapsWindow: row.overlaps_window ?? false,
           geographicScope: "country",
           severityMethod: "uncalibrated-source-score-not-used",
+          assessment: "single_source_network_measurement",
           causalInterpretation: false,
         },
       });

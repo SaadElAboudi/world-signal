@@ -54,7 +54,7 @@ export async function synchronizeStories(now = new Date()) {
 }
 
 export async function listStories(limit = 20): Promise<Story[]> {
-  const result = await getPool().query("SELECT payload FROM stories ORDER BY CASE status WHEN 'confirmed' THEN 0 WHEN 'corroborated' THEN 1 WHEN 'developing' THEN 2 WHEN 'detected' THEN 3 WHEN 'unexplained' THEN 4 ELSE 5 END, updated_at DESC LIMIT $1", [Math.max(1, Math.min(100, limit))]);
+  const result = await getPool().query("SELECT payload FROM stories WHERE status<>'resolved' ORDER BY CASE status WHEN 'confirmed' THEN 0 WHEN 'corroborated' THEN 1 WHEN 'developing' THEN 2 WHEN 'detected' THEN 3 WHEN 'unexplained' THEN 4 ELSE 5 END, updated_at DESC LIMIT $1", [Math.max(1, Math.min(100, limit))]);
   return result.rows.map((row) => row.payload as Story);
 }
 
