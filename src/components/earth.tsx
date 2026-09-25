@@ -14,6 +14,12 @@ import type { WorldEvent } from "@/events/types";
 import { eventLabel } from "./world-event-detail";
 import type { CorrelatedEvent } from "@/correlations/types";
 import { Icon } from "./icon";
+import {
+  countryContains,
+  eventMarkerKind,
+  markerSymbol,
+  signalMarkerKind,
+} from "./map-markers";
 const motionQuery = "(prefers-reduced-motion: reduce)";
 function subscribeMotion(callback: () => void) {
   const media = window.matchMedia(motionQuery);
@@ -23,7 +29,12 @@ function subscribeMotion(callback: () => void) {
 const getMotionPreference = () => window.matchMedia(motionQuery).matches;
 interface Country {
   properties: { ADMIN: string };
-  geometry: { type: string; coordinates: number[][][] };
+  geometry: { type: string; coordinates: unknown };
+}
+export interface CountryMapSelection {
+  signalIds: string[];
+  eventIds: string[];
+  correlationIds: string[];
 }
 export default function Earth({
   signals,
@@ -48,7 +59,7 @@ export default function Earth({
   selected: WorldSignal | null;
   country: string | null;
   onSelect: (s: WorldSignal) => void;
-  onCountry: (name: string) => void;
+  onCountry: (name: string, selection: CountryMapSelection) => void;
 }) {
   const { t, countryName, locale } = useI18n();
   const labelSignals = useMemo(() => {
@@ -166,18 +177,31 @@ export default function Earth({
         polygonSideColor={() => "rgba(0,0,0,0)"}
         polygonStrokeColor={() => "#345558"}
         polygonLabel={(d) => countryName((d as Country).properties.ADMIN)}
-        onPolygonClick={(d) => onCountry((d as Country).properties.ADMIN)}
-        htmlElementsData={[...events, ...worldEvents]}
+        onPolygonClick={(d) => {
+          const selectedCountry = d as Country;
+          const contains = (latitude: number, longitude: number) =>
+            countryContains(selectedCountry.geometry, latitude, longitude);
+          onCountry(selectedCountry.properties.ADMIN, {
+            signalIds: signals.filter((item) => contains(item.latitude, item.longitude)).map((item) => item.id),
+            eventIds: worldEvents.filter((item) => contains(item.location.latitude, item.location.longitude)).map((item) => item.id),
+            correlationIds: events.filter((item) => contains(item.geographicScope.latitude, item.geographicScope.longitude)).map((item) => item.id),
+          });
+        }}
+        htmlElementsData={[...events, ...worldEvents, ...signals]}
         htmlLat={(d) =>
           ("location" in d
             ? (d as WorldEvent).location
-            : (d as CorrelatedEvent).geographicScope
+            : "geographicScope" in d
+              ? (d as CorrelatedEvent).geographicScope
+              : (d as WorldSignal)
           ).latitude
         }
         htmlLng={(d) =>
           ("location" in d
             ? (d as WorldEvent).location
-            : (d as CorrelatedEvent).geographicScope
+            : "geographicScope" in d
+              ? (d as CorrelatedEvent).geographicScope
+              : (d as WorldSignal)
           ).longitude
         }
         htmlAltitude={0.06}
@@ -185,8 +209,9 @@ export default function Earth({
           if ("location" in d) {
             const event = d as WorldEvent;
             const button = document.createElement("button");
-            button.className = "world-event-marker";
-            button.textContent = "◇";
+            const kind = eventMarkerKind(event);
+            button.className = `map-event-marker marker-${kind}${event.id === selectedWorldEvent?.id ? " selected" : ""}`;
+            button.textContent = markerSymbol(kind);
             button.style.color =
               event.severity === "info"
                 ? "#7cb6ff"
@@ -198,9 +223,20 @@ export default function Earth({
             button.onclick = () => onWorldEvent?.(event);
             return button;
           }
+          if (!("geographicScope" in d)) {
+            const signal = d as WorldSignal;
+            const button = document.createElement("button");
+            const kind = signalMarkerKind(signal);
+            button.className = `map-event-marker marker-${kind}${signal.id === selected?.id ? " selected" : ""}`;
+            button.textContent = markerSymbol(kind);
+            button.style.color = SEVERITY_COLOR[signal.severity];
+            button.setAttribute("aria-label", `${signal.country}: ${signal.title}`);
+            button.onclick = () => onSelect(signal);
+            return button;
+          }
           const event = d as CorrelatedEvent;
           const button = document.createElement("button");
-          button.className = "correlation-marker";
+          button.className = `map-event-marker marker-correlation${event.id === selectedEvent?.id ? " selected" : ""}`;
           button.textContent = "◎";
           button.setAttribute(
             "aria-label",
@@ -209,22 +245,6 @@ export default function Earth({
           button.onclick = () => onEvent?.(event);
           return button;
         }}
-        pointsData={signals}
-        pointLat="latitude"
-        pointLng="longitude"
-        pointAltitude={0.008}
-        pointRadius={(d) =>
-          (d as WorldSignal).id === selected?.id ||
-          selectedEvent?.signalIds.includes((d as WorldSignal).id)
-            ? 0.9
-            : 0.45
-        }
-        pointColor={(d) => SEVERITY_COLOR[(d as WorldSignal).severity]}
-        pointLabel={(d) =>
-          `${(d as WorldSignal).country} · ${(d as WorldSignal).title} (${(d as WorldSignal).provenance === "synthetic" ? "demo" : "observed"})`
-        }
-        onPointClick={(d) => onSelect(d as WorldSignal)}
-        pointsTransitionDuration={reducedMotion ? 0 : 400}
         ringsData={reducedMotion ? [] : labelSignals}
         ringLat="latitude"
         ringLng="longitude"

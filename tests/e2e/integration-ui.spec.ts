@@ -86,6 +86,11 @@ test("French, grouped evidence and reported events remain understandable and usa
   await page.goto("/?mode=live&lang=fr");
   await expect(page.locator("html")).toHaveAttribute("lang", "fr");
   await expect(page.getByRole("heading", { name: "Comprendre ce qui change." })).toBeVisible();
+  if (info.project.name !== "mobile") {
+    await page.getByRole("button", { name: "Séismes", exact: true }).click();
+    await expect(page.locator(".world-feed-card")).toHaveCount(2);
+    await page.getByRole("button", { name: "Tout", exact: true }).last().click();
+  }
   await expect(page.locator(".world-feed-card.correlation")).toHaveCount(1);
   await page.locator(".world-feed-card.correlation").click();
   await expect(page.locator(".event-timeline li")).toHaveCount(2);

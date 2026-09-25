@@ -14,6 +14,13 @@ import { Icon } from "./icon";
 import { SignalDetail } from "./signal-detail";
 import { WorldEventDetail } from "./world-event-detail";
 import { CorrelationDetail } from "./correlation-detail";
+import type { CountryMapSelection } from "./earth";
+import {
+  eventMarkerKind,
+  MAP_MARKERS,
+  markerSymbol,
+  type MapMarkerKind,
+} from "./map-markers";
 
 const Earth = dynamic(() => import("./earth"), {
   ssr: false,
@@ -88,6 +95,17 @@ function correlationMatchesCategory(item: CorrelatedEvent, category: EventCatego
   return categories.includes(category);
 }
 
+function correlationMatchesMarker(item: CorrelatedEvent, marker: MapMarkerKind) {
+  if (marker === "all" || marker === "correlation") return true;
+  return item.signalTypes.some((type) => {
+    if (type === "earthquake") return marker === "earthquake";
+    if (type === "wildfire") return marker === "fire";
+    if (type === "internet") return marker === "network";
+    if (type === "aviation") return marker === "aviation";
+    return false;
+  });
+}
+
 function errorExplanation(error: string | null | undefined, fr: boolean) {
   if (!error) return fr ? "Dernières données conservées" : "Last data retained";
   if (["upstream_http_429", "provider_cooldown"].includes(error))
@@ -115,6 +133,9 @@ export function LiveDashboard({
   const [eventsAvailable, setEventsAvailable] = useState(initialEventsAvailable);
   const [hours, setHours] = useState(24);
   const [category, setCategory] = useState<EventCategory | null>(null);
+  const [mapMarker, setMapMarker] = useState<MapMarkerKind>("all");
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
+  const [countrySelection, setCountrySelection] = useState<CountryMapSelection | null>(null);
   const [query, setQuery] = useState("");
   const [mobileView, setMobileView] = useState<MobileView>("feed");
   const [isCompact, setIsCompact] = useState(true);
@@ -192,10 +213,15 @@ export function LiveDashboard({
           updated >= asOfMs - hours * 3600000 &&
           updated <= asOfMs &&
           (!category || event.category === category) &&
+          (mapMarker === "all" || eventMarkerKind(event) === mapMarker) &&
+          (!countrySelection ||
+            countrySelection.eventIds.includes(event.id) ||
+            (typeof event.properties.signalId === "string" &&
+              countrySelection.signalIds.includes(event.properties.signalId))) &&
           (!query || text.includes(query.toLowerCase()))
         );
       }),
-    [allEvents, asOfMs, hours, category, query, locale],
+    [allEvents, asOfMs, hours, category, mapMarker, countrySelection, query, locale],
   );
   const correlations = useMemo(
     () =>
@@ -203,9 +229,11 @@ export function LiveDashboard({
         (item) =>
           Date.parse(item.windowEnd) >= asOfMs - hours * 3600000 &&
           Date.parse(item.windowEnd) <= asOfMs &&
-          correlationMatchesCategory(item, category),
+          correlationMatchesCategory(item, category) &&
+          correlationMatchesMarker(item, mapMarker) &&
+          (!countrySelection || countrySelection.correlationIds.includes(item.id)),
       ),
-    [snapshot.correlations, asOfMs, hours, category],
+    [snapshot.correlations, asOfMs, hours, category, mapMarker, countrySelection],
   );
   const feed = useMemo<FeedItem[]>(
     () =>
@@ -247,6 +275,15 @@ export function LiveDashboard({
   const closeDetail = () => {
     setSelectedEventId(null);
     setSelectedCorrelationId(null);
+  };
+  const clearCountry = () => {
+    setSelectedCountry(null);
+    setCountrySelection(null);
+  };
+  const chooseMarker = (marker: MapMarkerKind) => {
+    setMapMarker(marker);
+    clearCountry();
+    closeDetail();
   };
 
   useEffect(() => {
@@ -308,7 +345,7 @@ export function LiveDashboard({
       <div className="live-filters" aria-label={fr ? "Filtres du Fil mondial" : "World Feed filters"}>
         <div className="category-chips">
           {CATEGORIES.map((item) => (
-            <button key={item.id ?? "all"} className={category === item.id ? "active" : ""} aria-pressed={category === item.id} onClick={() => setCategory(item.id)}>
+            <button key={item.id ?? "all"} className={category === item.id ? "active" : ""} aria-pressed={category === item.id} onClick={() => { setCategory(item.id); clearCountry(); }}>
               {fr ? item.fr : item.en}
               <small>{item.id ? allEvents.filter((event) => event.category === item.id).length : allEvents.length}</small>
             </button>
@@ -320,7 +357,7 @@ export function LiveDashboard({
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={fr ? "Rechercher un lieu ou un événement" : "Search a place or event"} />
         </label>
         <div className="period-chips">
-          {PERIODS.map((period) => <button key={period.hours} className={hours === period.hours ? "active" : ""} onClick={() => setHours(period.hours)}>{period.label}</button>)}
+          {PERIODS.map((period) => <button key={period.hours} className={hours === period.hours ? "active" : ""} onClick={() => { setHours(period.hours); clearCountry(); }}>{period.label}</button>)}
         </div>
       </div>
 
@@ -340,18 +377,31 @@ export function LiveDashboard({
               events={correlations}
               selectedEvent={selectedCorrelation}
               onEvent={openCorrelation}
-              country={null}
+              country={selectedCountry}
               onSelect={(signal: WorldSignal) => {
                 const event = visibleEvents.find((item) => item.properties.signalId === signal.id);
                 if (event) openEvent(event);
               }}
-              onCountry={() => {}}
+              onCountry={(name, selection) => {
+                setSelectedCountry(name);
+                setCountrySelection(selection);
+                closeDetail();
+                if (isCompact) setMobileView("feed");
+              }}
             />
           ) : null}
-          <div className="map-legend">
-            <span><i className="observed" />{fr ? "Observé" : "Observed"}</span>
-            <span><i className="anomaly" />{fr ? "Anomalie" : "Anomaly"}</span>
-            <span><i className="linked" />{fr ? "Corrélation" : "Correlation"}</span>
+          <div className="map-legend" aria-label={fr ? "Filtrer les symboles de la carte" : "Filter map symbols"}>
+            {MAP_MARKERS.filter((marker) => marker.id !== "other").map((marker) => (
+              <button
+                key={marker.id}
+                className={`legend-${marker.id}`}
+                aria-pressed={mapMarker === marker.id}
+                onClick={() => chooseMarker(marker.id)}
+                title={fr ? marker.fr : marker.en}
+              >
+                <i>{marker.symbol}</i><span>{fr ? marker.fr : marker.en}</span>
+              </button>
+            ))}
           </div>
         </section>
 
@@ -368,7 +418,11 @@ export function LiveDashboard({
           ) : (
             <>
               <div className="world-feed-heading">
-                <div><span>{fr ? "FIL MONDIAL" : "WORLD FEED"}</span><h2>{fr ? "Ce qui se passe maintenant" : "What is happening now"}</h2></div>
+                <div>
+                  <span>{selectedCountry ? (fr ? "PAYS SÉLECTIONNÉ" : "SELECTED COUNTRY") : (fr ? "FIL MONDIAL" : "WORLD FEED")}</span>
+                  <h2>{selectedCountry ? countryName(selectedCountry) : (fr ? "Ce qui se passe maintenant" : "What is happening now")}</h2>
+                  {selectedCountry && <button className="clear-country" onClick={clearCountry}>{fr ? "Voir le monde entier ×" : "Show the whole world ×"}</button>}
+                </div>
                 <strong>{feed.length}</strong>
               </div>
               {!eventsAvailable && <p className="feed-notice">{fr ? "Actualisation des événements indisponible. Les dernières données restent visibles." : "Event refresh unavailable. Last available data remains visible."}</p>}
@@ -389,10 +443,10 @@ export function LiveDashboard({
                     </div>
                     <h3>{item.event.properties.signalId ? signalTitle(snapshot.signals.find((signal) => signal.id === item.event.properties.signalId)!, locale) : item.event.title}</h3>
                     <p>{item.event.magnitude.value !== null ? `${item.event.magnitude.value.toLocaleString(fr ? "fr-FR" : "en-GB", { maximumFractionDigits: 1 })} ${item.event.magnitude.unit ?? ""}` : item.event.source.name}</p>
-                    <footer><span>◇ {eventNature(item.event, fr).toUpperCase()}</span><small>{item.event.source.name}</small></footer>
+                    <footer><span>{markerSymbol(eventMarkerKind(item.event))} {eventNature(item.event, fr).toUpperCase()}</span><small>{item.event.source.name}</small></footer>
                   </button>
                 ))}
-                {!feed.length && <div className="empty-state"><h3>{fr ? "Aucun événement dans cette période" : "No events in this time window"}</h3><p>{fr ? "Élargissez la période ou changez de catégorie. L’absence de résultat ne prouve pas l’absence d’activité." : "Widen the period or change category. No result does not prove absence of activity."}</p></div>}
+                {!feed.length && <div className="empty-state"><h3>{selectedCountry ? (fr ? `Aucun événement visible pour ${countryName(selectedCountry)}` : `No visible event for ${countryName(selectedCountry)}`) : (fr ? "Aucun événement dans cette période" : "No events in this time window")}</h3><p>{fr ? "Élargissez la période ou changez de catégorie. L’absence de résultat ne prouve pas l’absence d’activité." : "Widen the period or change category. No result does not prove absence of activity."}</p></div>}
               </div>
               <div className="world-feed-footer">{fr ? "Observation, anomalie ou corrélation : la nature de chaque élément est indiquée." : "Observation, anomaly or correlation: every item states its nature."}</div>
             </>
