@@ -87,9 +87,9 @@ test("French, grouped evidence and reported events remain understandable and usa
   await expect(page.locator("html")).toHaveAttribute("lang", "fr");
   await expect(page.getByRole("heading", { name: "Comprendre ce qui change." })).toBeVisible();
   if (info.project.name !== "mobile") {
-    await page.getByRole("button", { name: "Séismes", exact: true }).click();
+    await page.locator(".map-legend .legend-earthquake").click();
     await expect(page.locator(".world-feed-card")).toHaveCount(2);
-    await page.getByRole("button", { name: "Tout", exact: true }).last().click();
+    await page.locator(".map-legend .legend-all").click();
   }
   await expect(page.locator(".world-feed-card.correlation")).toHaveCount(1);
   await page.locator(".world-feed-card.correlation").click();
@@ -123,10 +123,6 @@ test("French, grouped evidence and reported events remain understandable and usa
     ),
   ).toBe(true);
   if (info.project.name !== "mobile") {
-    await page.screenshot({
-      path: `test-results/${info.project.name}-fr-events.png`,
-      fullPage: true,
-    });
     await page.getByRole("button", { name: "Fermer l’événement" }).click();
   }
   await page.getByRole("button", { name: "Océans et environnement" }).click();
