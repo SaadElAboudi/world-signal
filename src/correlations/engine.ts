@@ -36,7 +36,7 @@ const start = (input: CorrelationInput) =>
 const end = (input: CorrelationInput) =>
   Date.parse(input.endedAt ?? input.signal.timestamp);
 export const CORRELATION_METHOD =
-  "spatiotemporal-v2: geography 25%, temporal proximity 20%, severity 10%, system independence 10%, minimum component confidence 15%, semantic compatibility 20%; threshold 0.70. Country containment or shared H3 cell; maximum 24-hour onset span. Incompatible signal pairs are rejected. Grouping describes co-occurrence, not causality. Ranking is a heuristic, not scientific certainty.";
+  "spatiotemporal-v3: pair strength uses geography 25%, temporal proximity 20%, severity 10%, system independence 10%, minimum component confidence 15%, semantic compatibility 20%; threshold 0.70. Cluster priority then combines weakest pair strength 70%, distinct provider diversity 20% and observed persistence 10%. Country containment or shared H3 cell; maximum 24-hour onset span. Incompatible signal pairs are rejected. Grouping describes co-occurrence, not causality. Ranking is a heuristic, not scientific certainty.";
 export function scoreCandidate(
   a: CorrelationInput,
   b: CorrelationInput,
@@ -278,6 +278,22 @@ export function correlate(
         .map((b) => edges.get(`${a}:${b}`)?.score)
         .filter((s): s is number => s !== undefined),
     );
+    const correlationStrength = Math.min(...scores);
+    const providerCount = new Set(members.map((s) => s.providerId)).size;
+    // Two providers establish a useful minimum; additional independent
+    // providers strengthen a cluster without turning it into a causal claim.
+    const sourceDiversity = Math.min(1, providerCount / 3);
+    const persistenceMinutes = Math.max(
+      0,
+      Math.round((now - Math.min(...members.map(start))) / 60_000),
+    );
+    const persistence = Math.min(1, persistenceMinutes / 60);
+    const clusterScore = Math.round(
+      (correlationStrength * 0.7 + sourceDiversity * 0.2 + persistence * 0.1) * 100,
+    ) / 100;
+    const storyEligible =
+      clusterScore >= 0.7 &&
+      members.every((member) => member.signal.assessment?.storyEligible !== false);
     return {
       id: `correlation:${createHash("sha256")
         .update(signalIds.join("|"))
@@ -291,7 +307,11 @@ export function correlate(
       signalIds,
       signalTypes: [...new Set(members.map((s) => s.signal.type))].sort(),
       providerIds: [...new Set(members.map((s) => s.providerId))].sort(),
-      correlationStrength: Math.min(...scores),
+      correlationStrength,
+      clusterScore,
+      sourceDiversity,
+      persistenceMinutes,
+      storyEligible,
       confidence: Math.min(...members.map((s) => s.signal.confidence)),
       severity: members.reduce<Severity>(
         (best, s) =>

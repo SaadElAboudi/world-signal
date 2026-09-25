@@ -56,6 +56,16 @@ export function CorrelationDetail({
           {event.signalTypes.length} {t("independent systems")} ·{" "}
           {event.windowHours} h · {t(event.status)}
         </p>
+        {event.clusterScore !== undefined && (
+          <div className="detail-section source-section">
+            <h3>{locale === "fr" ? "Priorité du regroupement" : "Cluster priority"} · {Math.round(event.clusterScore * 100)}/100</h3>
+            <p>
+              {locale === "fr"
+                ? `${event.sourceDiversity ?? 0} de diversité des sources et ${event.persistenceMinutes ?? 0} min de persistance observée. Ce score priorise l’examen, il ne prouve aucune cause.`
+                : `${event.sourceDiversity ?? 0} source diversity and ${event.persistenceMinutes ?? 0} minutes of observed persistence. This score prioritizes review; it proves no cause.`}
+            </p>
+          </div>
+        )}
         <div className="detail-section">
           <h3>{t("Why this was grouped")}</h3>
           <p>

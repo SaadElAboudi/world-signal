@@ -138,6 +138,9 @@ test("three related independent systems merge deterministically into one event",
   const result = correlate(inputs, { asOf });
   assert.equal(result.events.length, 1);
   assert.equal(result.events[0].signalTypes.length, 3);
+  assert.equal(result.events[0].sourceDiversity, 1);
+  assert.ok(result.events[0].clusterScore! >= result.events[0].correlationStrength);
+  assert.equal(result.events[0].storyEligible, true);
   assert.deepEqual(result, correlate([...inputs].reverse(), { asOf }));
 });
 test("complete-link grouping rejects transitive geographic inflation", () => {

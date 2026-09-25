@@ -17,9 +17,16 @@ export async function synchronizeStories(now = new Date()) {
   const client = await getPool().connect();
   try {
     const correlations = await client.query("SELECT payload FROM correlated_events WHERE window_end >= $1", [new Date(now.getTime() - 7 * 86400000)]);
+    await client.query(
+      `DELETE FROM stories s USING correlated_events c
+       WHERE s.correlation_id=c.id AND c.payload->>'storyEligible'='false'`,
+    );
     let saved = 0;
     for (const row of correlations.rows) {
       const correlation = row.payload as CorrelatedEvent;
+      // v3 correlations must clear the cluster threshold before becoming a
+      // human-facing Story. Older rows remain readable until recomputed.
+      if (correlation.storyEligible === false) continue;
       // Reuse the synchronization connection. The production collector has a
       // deliberately small pool, so asking the pool for a nested connection
       // here can starve Context refreshes under load.

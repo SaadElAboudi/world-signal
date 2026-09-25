@@ -44,6 +44,11 @@ export interface CorrelatedEvent {
   signalTypes: SignalType[];
   providerIds: string[];
   correlationStrength: number;
+  /** Cluster-level priority, distinct from the weakest pairwise relationship. */
+  clusterScore?: number;
+  sourceDiversity?: number;
+  persistenceMinutes?: number;
+  storyEligible?: boolean;
   confidence: number;
   severity: Severity;
   status: "active" | "resolved";

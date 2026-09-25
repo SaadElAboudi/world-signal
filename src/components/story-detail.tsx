@@ -37,6 +37,7 @@ export function StoryDetail({ detail }: { detail: StoryDetailData }) {
         <div><span>{fr ? "DÉBUT DE L’OBSERVATION" : "FIRST OBSERVATION"}</span><strong>{date(story.startedAt)} UTC</strong></div>
         <div><span>{fr ? "CONFIANCE DES DONNÉES" : "DATA CONFIDENCE"}</span><strong>{Math.round(story.confidence * 100)}%</strong></div>
         <div><span>{fr ? "FORCE DU REGROUPEMENT" : "CLUSTER STRENGTH"}</span><strong>{Math.round(story.correlationStrength * 100)}%</strong></div>
+        {detail.correlation.clusterScore !== undefined && <div><span>{fr ? "PRIORITÉ" : "PRIORITY"}</span><strong>{Math.round(detail.correlation.clusterScore * 100)}%</strong></div>}
       </section>
       <section className="story-section story-assessment">
         <h2>{fr ? "Évaluation actuelle" : "Current assessment"}</h2>
