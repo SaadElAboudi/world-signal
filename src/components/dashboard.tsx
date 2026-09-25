@@ -24,6 +24,7 @@ import type { WorldEvent } from "@/events/types";
 import { WorldEventDetail, eventLabel } from "./world-event-detail";
 import { CorrelationDetail } from "./correlation-detail";
 import { SignalDetail } from "./signal-detail";
+import { LiveDashboard } from "./live-dashboard";
 const Earth = dynamic(() => import("./earth"), {
   ssr: false,
   loading: function LoadingEarth() {
@@ -66,7 +67,7 @@ const periods = [
   { label: "30D", hours: 720 },
 ];
 
-export default function Dashboard({
+function LegacyDashboard({
   snapshot: initialSnapshot,
   initialEvents = [],
   initialEventsAvailable = false,
@@ -1188,4 +1189,13 @@ export default function Dashboard({
       </dialog>
     </main>
   );
+}
+
+export default function Dashboard(props: {
+  snapshot: SignalSnapshot;
+  initialEvents?: WorldEvent[];
+  initialEventsAvailable?: boolean;
+}) {
+  if (props.snapshot.mode === "live") return <LiveDashboard {...props} />;
+  return <LegacyDashboard {...props} />;
 }

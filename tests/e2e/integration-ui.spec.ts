@@ -85,41 +85,48 @@ test("French, grouped evidence and reported events remain understandable and usa
   );
   await page.goto("/?mode=live&lang=fr");
   await expect(page.locator("html")).toHaveAttribute("lang", "fr");
-  await expect(page.locator(".multi-signal-card")).toHaveCount(1);
-  await page.locator(".multi-signal-card").click();
+  await expect(page.getByRole("heading", { name: "Comprendre ce qui change." })).toBeVisible();
+  await expect(page.locator(".world-feed-card.correlation")).toHaveCount(1);
+  await page.locator(".world-feed-card.correlation").click();
   await expect(page.locator(".event-timeline li")).toHaveCount(2);
   await expect(
     page.getByRole("region", { name: "Détails de l’événement multi-signaux" }),
   ).toBeVisible();
-  await page.keyboard.press("Escape");
-  await page.getByRole("tab", { name: "Événements signalés" }).click();
-  await expect(page.locator(".signal-card")).toHaveCount(3);
+  await page.getByRole("button", { name: "Fermer les détails de l’événement" }).click();
+  await expect(page.locator(".world-feed-card")).toHaveCount(4);
   await page
-    .locator(".signal-card")
+    .locator(".world-feed-card")
     .filter({ hasText: "Paris · vent fort" })
     .click();
   await expect(
     page.getByRole("region", { name: "Détails de l’événement" }),
   ).toBeVisible();
   await expect(page.locator(".big-measure")).toContainText("85");
-  await expect(page.locator("canvas")).toBeVisible({ timeout: 60000 });
-  await expect(page.locator(".earth-loading")).toHaveCount(0, {
-    timeout: 60000,
-  });
+  if (info.project.name === "mobile") {
+    await page.getByRole("button", { name: "Fermer l’événement" }).click();
+    await expect(page.getByRole("tab", { name: "Fil" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: "Carte" })).toBeVisible();
+  } else {
+    await expect(page.locator("canvas")).toBeVisible({ timeout: 60000 });
+    await expect(page.locator(".earth-loading")).toHaveCount(0, {
+      timeout: 60000,
+    });
+  }
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await page.screenshot({
-    path: `test-results/${info.project.name}-fr-events.png`,
-    fullPage: true,
-  });
-  await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Mobilité" }).click();
-  await expect(
-    page.getByText("Aucun événement dans cette période"),
-  ).toBeVisible();
+  if (info.project.name !== "mobile") {
+    await page.screenshot({
+      path: `test-results/${info.project.name}-fr-events.png`,
+      fullPage: true,
+    });
+    await page.getByRole("button", { name: "Fermer l’événement" }).click();
+  }
+  await page.getByRole("button", { name: "Océans et environnement" }).click();
+  await expect(page.locator(".world-feed-card")).toHaveCount(0);
+  await expect(page.locator(".empty-state")).toContainText("Aucun événement");
   await page.getByRole("button", { name: "English", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await page.reload();

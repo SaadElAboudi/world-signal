@@ -63,18 +63,19 @@ test("live provenance, nullable event baselines, provisional fire references and
   await page.route("**/api/signals?*", (route) =>
     route.fulfill({ json: snapshot }),
   );
+  await page.route("**/api/events?*", (route) =>
+    route.fulfill({ json: { events: [] } }),
+  );
   await page.goto("/?mode=live");
-  await expect(
-    page.getByRole("button", { name: "LIVE DATA", exact: true }),
-  ).toBeVisible({ timeout: 60000 });
-  await expect(page.locator(".signal-card")).toHaveCount(2);
-  await page.getByRole("button", { name: "View Japan signal:" }).click();
+  await expect(page.getByRole("button", { name: "2/2 sources current" })).toBeVisible({ timeout: 60000 });
+  await expect(page.locator(".world-feed-card")).toHaveCount(2);
+  await page.locator(".world-feed-card").filter({ hasText: "Japan" }).click();
   await expect(page.getByText("OBSERVED EVENT", { exact: true })).toBeVisible();
   await expect(page.getByText("N/A", { exact: true })).toBeVisible();
   await expect(page.getByText("Data confidence · HIGH")).toBeVisible();
   await expect(page.getByText("SIMULATED", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Close signal details" }).click();
-  await page.getByRole("button", { name: "View Brazil signal:" }).click();
+  await page.locator(".world-feed-card").filter({ hasText: "Brazil" }).click();
   await expect(
     page.getByText("STATISTICAL ANOMALY", { exact: true }),
   ).toBeVisible();
@@ -92,22 +93,12 @@ test("live provenance, nullable event baselines, provisional fire references and
         : p,
     ),
   };
-  await page
-    .getByRole("textbox", { name: "Search observed signals" })
-    .fill("Japan");
-  await expect(
-    page.getByRole("button", { name: "PARTIAL DATA", exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "PARTIAL DATA", exact: true }).click();
-  await expect(page.getByText("missing credentials")).toBeVisible();
-  await page.getByRole("button", { name: "Explore the signals" }).click();
+  await expect(page.getByRole("button", { name: "1/2 sources current" })).toBeVisible();
+  await page.getByRole("button", { name: "1/2 sources current" }).click();
+  await expect(page.getByText("Refresh temporarily unavailable")).toBeVisible();
+  await page.getByRole("button", { name: "Close" }).click();
   await page.route("**/api/signals?*", (route) => route.abort());
-  await page
-    .getByRole("textbox", { name: "Search observed signals" })
-    .fill("Brazil");
-  await expect(
-    page.getByRole("button", { name: "DATA DELAYED", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "0/2 sources current" })).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
