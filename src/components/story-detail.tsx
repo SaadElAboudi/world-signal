@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import type { StoryDetail as StoryDetailData } from "@/database/stories";
 import { useI18n } from "@/i18n/context";
 
@@ -47,4 +48,30 @@ export function StoryDetail({ detail }: { detail: StoryDetailData }) {
       <p className="story-caveat">{fr ? "La proximité géographique ou temporelle de signaux ne prouve ni une cause, ni un impact. Les données peuvent être incomplètes ou retardées." : "Geographic or temporal proximity between signals does not prove cause or impact. Data may be incomplete or delayed."}</p>
     </article>
   </main>;
+}
+
+export function StoryLoader({ id }: { id: string }) {
+  const { locale } = useI18n();
+  const fr = locale === "fr";
+  const [detail, setDetail] = useState<StoryDetailData | null>(null);
+  const [state, setState] = useState<"loading" | "missing" | "error">("loading");
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/stories/${encodeURIComponent(id)}`, { signal: controller.signal, cache: "no-store" })
+      .then(async (response) => {
+        if (response.status === 404) { setState("missing"); return null; }
+        if (!response.ok) throw new Error("story_unavailable");
+        return response.json() as Promise<StoryDetailData>;
+      })
+      .then((result) => { if (result) { setDetail(result); setState("loading"); } })
+      .catch(() => { if (!controller.signal.aborted) setState("error"); });
+    return () => controller.abort();
+  }, [id]);
+  if (detail) return <StoryDetail detail={detail} />;
+  const message = state === "loading"
+    ? (fr ? "Chargement de la Story…" : "Loading Story…")
+    : state === "missing"
+      ? (fr ? "Cette Story n’est plus disponible." : "This Story is no longer available.")
+      : (fr ? "La Story est momentanément indisponible." : "This Story is temporarily unavailable.");
+  return <main className="story-page"><header className="story-topbar"><Link className="brand" href="/"><span className="brand-symbol">◉</span><span>WORLD<span className="brand-light"> SIGNAL</span></span></Link></header><section className="story-loader"><p>{message}</p><Link href="/stories">{fr ? "Voir les Stories actives" : "View active stories"}</Link></section></main>;
 }
