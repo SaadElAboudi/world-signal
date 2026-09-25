@@ -1,0 +1,33 @@
+name: Apply database migrations (manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: world-signal-production-migrations
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: vars.WORLD_SIGNAL_INGEST_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      # This must be an administrator connection URL, kept separate from the
+      # restricted collector role used by scheduled workflows.
+      DATABASE_URL: ${{ secrets.WORLD_SIGNAL_DATABASE_ADMIN_URL }}
+      DATABASE_SSL_CA: ${{ secrets.WORLD_SIGNAL_DATABASE_CA }}
+      DATABASE_POOL_MAX: "1"
+      WORLD_SIGNAL_MODE: live
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Apply database migrations with administrator role
+        run: npm run db:migrate

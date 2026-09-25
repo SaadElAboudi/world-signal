@@ -133,7 +133,7 @@ Provider failure never means recovery:
 
 ## Release and verification
 
-Database migrations must run before collectors use new tables. Run them once with the administrator role before deploying. Scheduled jobs intentionally never run migrations with their restricted worker credentials.
+Database migrations must run before collectors use new tables. Run them once with the administrator role before deploying. Scheduled jobs intentionally never run migrations with their restricted worker credentials. In GitHub, set the administrator-only connection string as the `WORLD_SIGNAL_DATABASE_ADMIN_URL` repository secret, then run **Apply database migrations (manual)**. Do not replace the restricted `WORLD_SIGNAL_DATABASE_URL` collector secret.
 
 Useful checks:
 
