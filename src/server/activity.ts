@@ -2,6 +2,7 @@ import type { Observation } from "../providers/contract";
 import type { WorldSignal } from "../core/types";
 import { getPool } from "../database/client";
 import { activityAssessment } from "../signals/activity";
+import { assessSignal } from "../signals/assessment";
 import { errorCode, log } from "./log";
 export function rowObservation(row: Record<string, unknown>): Observation {
   return {
@@ -108,6 +109,7 @@ export async function computeActivitySignals(now = new Date()) {
             };
           }
           if (!signal) continue;
+          signal = assessSignal(signal, now);
           await client.query(
             `INSERT INTO signals(id,provider,type,kind,severity,latitude,longitude,observed_at,started_at,updated_at,confidence,payload,resolved_at)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)

@@ -14,6 +14,7 @@ import type { Observation } from "../providers/contract";
 import type { WorldSignal } from "../core/types";
 import { errorCode, log } from "./log";
 import { synchronizeStories } from "../database/stories";
+import { assessSignal } from "../signals/assessment";
 async function computeEnvironmentalSignals(now = new Date()) {
   const client = await getPool().connect();
   let locked = false;
@@ -131,9 +132,10 @@ async function computeEnvironmentalSignals(now = new Date()) {
           if (signal) signals.push(signal);
         }
       }
+      const assessedSignals = signals.map((signal) => assessSignal(signal, now));
       await client.query("BEGIN");
       try {
-        const payloads = JSON.stringify(signals);
+        const payloads = JSON.stringify(assessedSignals);
         const saved = await client.query(
           `INSERT INTO signals(id,provider,type,kind,severity,latitude,longitude,observed_at,started_at,updated_at,confidence,payload)
           SELECT s->>'id',$2,s->>'type',s->>'kind',s->>'severity',(s->>'latitude')::float8,(s->>'longitude')::float8,(s->>'timestamp')::timestamptz,(s->>'startedAt')::timestamptz,$3,(s->>'confidence')::float8,s
@@ -156,7 +158,7 @@ async function computeEnvironmentalSignals(now = new Date()) {
           });
         const resolved = await client.query(
           "UPDATE signals SET resolved_at=$2,updated_at=$2,payload=jsonb_set(payload,'{status}','\"resolved\"') WHERE provider=$1 AND resolved_at IS NULL AND NOT(id=ANY($3::text[])) RETURNING id",
-          [provider, now, signals.map((s) => s.id)],
+          [provider, now, assessedSignals.map((s) => s.id)],
         );
         for (const row of resolved.rows)
           log("signal.resolved", { provider, id: row.id });
@@ -165,7 +167,7 @@ async function computeEnvironmentalSignals(now = new Date()) {
           [provider, state.sourceAsOf, now],
         );
         await client.query("COMMIT");
-        count += signals.length;
+        count += assessedSignals.length;
       } catch (error) {
         await client.query("ROLLBACK");
         throw error;

@@ -7,6 +7,7 @@ import { storageProfileForPressure } from "../database/storage-profile";
 import { AdsbLolProvider } from "../providers/adsblol";
 import { matchedActivityBaseline } from "../signals/matched-baseline";
 import { aviationDisruption } from "../signals/aviation";
+import { assessSignal } from "../signals/assessment";
 import { ingest } from "./ingestion";
 import { getConfig } from "./config";
 import { log } from "./log";
@@ -50,7 +51,7 @@ async function saveSignals(
 ) {
   await client.query("BEGIN");
   try {
-    const payloads = JSON.stringify(signals);
+  const payloads = JSON.stringify(signals.map((signal) => assessSignal(signal, now)));
     await client.query(
       `INSERT INTO signals(id,provider,type,kind,severity,latitude,longitude,observed_at,started_at,updated_at,confidence,payload)
        SELECT s->>'id','adsblol',s->>'type',s->>'kind',s->>'severity',(s->>'latitude')::float8,(s->>'longitude')::float8,(s->>'timestamp')::timestamptz,(s->>'startedAt')::timestamptz,$2,(s->>'confidence')::float8,s

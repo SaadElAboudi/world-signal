@@ -46,7 +46,10 @@ export async function computeCorrelations(now = new Date()) {
     const lifecycleInputs = await historicalInputs(now, 35 * 24);
     const inputs = lifecycleInputs.filter(
       (input) =>
-        Date.parse(input.signal.timestamp) >= now.getTime() - 24 * 3600000,
+        Date.parse(input.signal.timestamp) >= now.getTime() - 24 * 3600000 &&
+        // Signals created before Signal Engine V2 have no assessment; retain
+        // them until the next recomputation writes their assessed payload.
+        input.signal.assessment?.storyEligible !== false,
     );
     const all = [1, 6, 24].flatMap(
       (window) =>

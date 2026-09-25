@@ -73,6 +73,16 @@ export function SignalDetail({
             </small>
           </div>
         </div>
+        {signal.assessment && (
+          <div className="detail-section source-section">
+            <h3>{locale === "fr" ? "Priorité d’examen" : "Investigation priority"} · {signal.assessment.score}/100</h3>
+            <p>
+              {locale === "fr"
+                ? `${signal.assessment.persistenceMinutes} min de persistance observée. Ce score classe les signaux à examiner ; il ne mesure ni le danger, ni l’impact, ni une cause.`
+                : `${signal.assessment.persistenceMinutes} minutes of observed persistence. This score ranks signals for review; it does not measure danger, impact or cause.`}
+            </p>
+          </div>
+        )}
         {signal.magnitude !== undefined && (
           <div className="quake-meta">
             <span>

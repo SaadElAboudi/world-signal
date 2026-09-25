@@ -29,6 +29,8 @@ export interface WorldSignal {
   methodology: string;
   limitation: string;
   confidence: number;
+  /** A transparent triage score. It ranks data-supported change, not danger or cause. */
+  assessment?: SignalAssessment;
   baseline: EvidencePoint[];
   context: string;
   kind?:
@@ -47,6 +49,13 @@ export interface WorldSignal {
   evidence?: SignalEvidence;
   magnitude?: number;
   depth?: number;
+}
+export interface SignalAssessment {
+  score: number;
+  anomalyStrength: number;
+  persistenceMinutes: number;
+  storyEligible: boolean;
+  methodology: string;
 }
 export interface SignalEvidence {
   observationWindowHours: number;
