@@ -11,7 +11,7 @@ import { refreshAviation } from "../src/server/aviation";
 import { refreshPowerGrid } from "../src/server/power";
 import { getPool, closePool } from "../src/database/client";
 import { getConfig } from "../src/server/config";
-import { log, errorCode } from "../src/server/log";
+import { log, errorCode, safeErrorDetail } from "../src/server/log";
 
 const once = process.argv.includes("--once");
 const eventRefreshEnabled = process.env.WORLD_EVENT_REFRESH_ENABLED !== "false";
@@ -51,7 +51,11 @@ async function main() {
         return result;
       } catch (error) {
         if (required) failed = true;
-        log("worker.task.failed", { task: name, code: errorCode(error) });
+        log("worker.task.failed", {
+          task: name,
+          code: errorCode(error),
+          detail: safeErrorDetail(error),
+        });
       }
     };
     try {
@@ -187,7 +191,7 @@ async function main() {
         });
       }
     } catch (error) {
-      log("worker.tick.failed", { code: errorCode(error) });
+      log("worker.tick.failed", { code: errorCode(error), detail: safeErrorDetail(error) });
       failed = true;
     }
     if (once) {
