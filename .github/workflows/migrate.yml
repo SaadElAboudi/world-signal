@@ -20,7 +20,7 @@ jobs:
       # restricted collector role used by scheduled workflows.
       DATABASE_URL: ${{ secrets.WORLD_SIGNAL_DATABASE_ADMIN_URL }}
       DATABASE_SSL_CA: ${{ secrets.WORLD_SIGNAL_DATABASE_CA }}
-      DATABASE_POOL_MAX: "1"
+      DATABASE_POOL_MAX: "2"
       WORLD_SIGNAL_MODE: live
     steps:
       - uses: actions/checkout@v4
