@@ -11,6 +11,7 @@ import { IodaInternetOutageProvider } from "../events/providers/ioda";
 import { getPool } from "../database/client";
 import { enrichWeatherWithClimatology } from "./climate";
 import { collectionGuard, type BudgetedProvider } from "./resource-budget";
+import { DataError } from "./log";
 import {
   getWorldEvent,
   listWorldEvents,
@@ -43,6 +44,14 @@ function emptyResult(
     unchanged: 0,
     resolved: 0,
   } as const;
+}
+
+function providerPause(error: unknown) {
+  if (!(error instanceof DataError)) return null;
+  if (error.code === "api_budget_exhausted") return "budget_limited" as const;
+  if (["provider_cooldown", "upstream_http_429", "rate_limited"].includes(error.code))
+    return "skipped" as const;
+  return null;
 }
 
 async function withinBudget(provider: BudgetedProvider, now?: Date) {
@@ -123,11 +132,17 @@ export async function refreshMarineWorldEvents(options: RefreshOptions = {}) {
   if (limited) return { ...limited, provider: "open-meteo-marine" };
   const endpoint = process.env.OPEN_METEO_MARINE_ENDPOINT || undefined;
   const apiKey = process.env.OPEN_METEO_API_KEY || undefined;
-  return refreshProvider(
-    new OpenMeteoMarineProvider({ endpoint, apiKey }),
-    options,
-    true,
-  );
+  try {
+    return await refreshProvider(
+      new OpenMeteoMarineProvider({ endpoint, apiKey }),
+      options,
+      true,
+    );
+  } catch (error) {
+    const status = providerPause(error);
+    if (status) return emptyResult("open-meteo-marine", status);
+    throw error;
+  }
 }
 
 export async function refreshInternetWorldEvents(options: RefreshOptions = {}) {
@@ -155,8 +170,8 @@ export async function refreshAllWorldEvents(options: RefreshOptions = {}) {
   ] as const) {
     try {
       results.push(await refresh());
-    } catch {
-      results.push(emptyResult(name, "failed"));
+    } catch (error) {
+      results.push(emptyResult(name, providerPause(error) ?? "failed"));
     }
   }
   return {
