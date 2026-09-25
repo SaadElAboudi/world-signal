@@ -50,5 +50,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
+      - name: Apply database migrations
+        run: npm run db:migrate
       - name: Collect, analyze, contextualize and compact
         run: npm run worker -- --once ${{ github.event_name == 'workflow_dispatch' && '--force' || '' }}
