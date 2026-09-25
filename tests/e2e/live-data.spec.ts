@@ -93,13 +93,17 @@ test("live provenance, nullable event baselines, provisional fire references and
         : p,
     ),
   };
-  await page.getByRole("button", { name: "6H" }).click();
+  await page
+    .locator(".period-chips button", { hasText: "6H" })
+    .evaluate((button: HTMLButtonElement) => button.click());
   await expect(page.getByRole("button", { name: "1/2 sources current" })).toBeVisible();
   await page.getByRole("button", { name: "1/2 sources current" }).click();
   await expect(page.getByText("Refresh temporarily unavailable")).toBeVisible();
   await page.getByRole("button", { name: "Close" }).click();
   await page.route("**/api/signals?*", (route) => route.abort());
-  await page.getByRole("button", { name: "7D" }).click();
+  await page
+    .locator(".period-chips button", { hasText: "7D" })
+    .evaluate((button: HTMLButtonElement) => button.click());
   await expect(page.getByRole("button", { name: "0/2 sources current" })).toBeVisible();
   expect(
     await page.evaluate(
