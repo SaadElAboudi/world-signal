@@ -13,6 +13,7 @@ import { mergeCoverage } from "../signals/baseline";
 import type { Observation } from "../providers/contract";
 import type { WorldSignal } from "../core/types";
 import { errorCode, log } from "./log";
+import { synchronizeStories } from "../database/stories";
 async function computeEnvironmentalSignals(now = new Date()) {
   const client = await getPool().connect();
   let locked = false;
@@ -195,5 +196,6 @@ export async function computeSignals(now = new Date()) {
   const result = await computeEnvironmentalSignals(now);
   await computeActivitySignals(now);
   await computeCorrelations(now);
+  await synchronizeStories(now);
   return result;
 }

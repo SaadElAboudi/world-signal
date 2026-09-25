@@ -306,6 +306,7 @@ export function LiveDashboard({
         </Link>
         <nav className="live-nav" aria-label={fr ? "Navigation principale" : "Main navigation"}>
           <a href="#now">{fr ? "Maintenant" : "Now"}</a>
+          <Link href="/stories">Stories</Link>
           <a href="#correlations">{fr ? "Corrélations" : "Correlations"}</a>
           <button onClick={() => healthDialog.current?.showModal()}>{fr ? "Sources" : "Sources"}</button>
         </nav>

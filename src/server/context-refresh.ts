@@ -5,6 +5,10 @@ import { pruneInvestigationHistory } from "../database/investigations";
 import { getConfig } from "./config";
 import { log, errorCode } from "./log";
 import { refreshSignalInvestigation } from "./context";
+import { getCorrelatedEventInvestigation } from "./context";
+import { synchronizeStories } from "../database/stories";
+import type { CorrelatedEvent } from "../correlations/types";
+import type { WorldSignal } from "../core/types";
 
 export interface ContextRefreshResult {
   status: "success" | "skipped";
@@ -54,6 +58,30 @@ export async function refreshRecentInvestigations(
         log("context.refresh.signal.failed", { signalId: row.id, code: errorCode(error) });
       }
     }
+
+    // Stories are only enriched when an existing correlation justifies a context lookup.
+    // This keeps contextual retrieval bounded and never turns a provider failure into
+    // an "unexplained" claim.
+    const correlated = await client.query(
+      `SELECT payload FROM correlated_events WHERE status='active' ORDER BY updated_at DESC LIMIT 2`,
+    );
+    for (const row of correlated.rows) {
+      try {
+        const event = row.payload as CorrelatedEvent;
+        const members = await client.query(
+          "SELECT payload FROM signals WHERE id=ANY($1::text[])",
+          [event.signalIds],
+        );
+        await getCorrelatedEventInvestigation(
+          event,
+          members.rows.map((member) => member.payload as WorldSignal),
+        );
+      } catch (error) {
+        failed += 1;
+        log("context.refresh.correlation.failed", { code: errorCode(error) });
+      }
+    }
+    await synchronizeStories();
 
     const storage = await getStorageBudgetState();
     const config = getConfig();
