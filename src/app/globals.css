@@ -651,6 +651,18 @@ button svg {
   font-size: 10px;
   color: #d4b77b;
 }
+.map-density-note {
+  position: absolute;
+  z-index: 5;
+  top: 56px;
+  left: 22px;
+  max-width: 210px;
+  margin: 0;
+  color: #8fa8ad;
+  font: 8px/1.45 var(--mono);
+  letter-spacing: .25px;
+  pointer-events: none;
+}
 .feed-panel {
   border-left: 1px solid var(--border);
   background: #0c141b;
@@ -2349,6 +2361,7 @@ button svg {
   .world-feed-card { padding: 16px 12px; }
   .world-feed-card h3 { font-size: 14px; }
   .map-legend { left: 12px; bottom: 12px; max-width: calc(100% - 24px); gap: 3px; }
+  .map-density-note { top: 52px; left: 12px; max-width: 190px; }
   .map-legend button { min-height: 34px; padding: 6px 9px; }
   .health-dialog-header,
   .health-intro,

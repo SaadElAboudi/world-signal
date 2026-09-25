@@ -181,6 +181,8 @@ export const fr: Record<string, string> = {
   "INITIALIZING EARTH": "INITIALISATION DU GLOBE",
   "Country boundaries unavailable. Explore signals in the feed.":
     "Frontières indisponibles. Consultez les signaux dans la liste.",
+  "Showing key markers. All events remain in the feed.":
+    "Les marqueurs principaux sont affichés. Tous les événements restent dans le fil.",
   "Zoom in": "Agrandir",
   "Zoom out": "Réduire",
   "Reset globe view": "Réinitialiser le globe",

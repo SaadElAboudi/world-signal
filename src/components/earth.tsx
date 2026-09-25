@@ -21,6 +21,7 @@ import {
   signalMarkerKind,
 } from "./map-markers";
 const motionQuery = "(prefers-reduced-motion: reduce)";
+const MAX_MAP_MARKERS = 56;
 function subscribeMotion(callback: () => void) {
   const media = window.matchMedia(motionQuery);
   media.addEventListener("change", callback);
@@ -35,6 +36,10 @@ export interface CountryMapSelection {
   signalIds: string[];
   eventIds: string[];
   correlationIds: string[];
+}
+
+function severityRank(severity: WorldSignal["severity"] | WorldEvent["severity"]) {
+  return { significant: 4, elevated: 3, notable: 2, info: 1 }[severity];
 }
 export default function Earth({
   signals,
@@ -62,6 +67,34 @@ export default function Earth({
   onCountry: (name: string, selection: CountryMapSelection) => void;
 }) {
   const { t, countryName, locale } = useI18n();
+  const markerSignals = useMemo(() => {
+    if (signals.length <= MAX_MAP_MARKERS) return signals;
+    const prioritized = [...signals].sort((a, b) => {
+      if (a.id === selected?.id) return -1;
+      if (b.id === selected?.id) return 1;
+      return severityRank(b.severity) - severityRank(a.severity);
+    });
+    const countries = new Set<string>();
+    return prioritized
+      .filter((signal) => {
+        if (signal.id === selected?.id) return true;
+        if (countries.has(signal.country)) return false;
+        countries.add(signal.country);
+        return true;
+      })
+      .slice(0, MAX_MAP_MARKERS);
+  }, [signals, selected]);
+  const markerWorldEvents = useMemo(
+    () =>
+      [...worldEvents]
+        .sort((a, b) => {
+          if (a.id === selectedWorldEvent?.id) return -1;
+          if (b.id === selectedWorldEvent?.id) return 1;
+          return severityRank(b.severity) - severityRank(a.severity);
+        })
+        .slice(0, MAX_MAP_MARKERS),
+    [worldEvents, selectedWorldEvent],
+  );
   const labelSignals = useMemo(() => {
     if (signals.length <= 14) return signals;
     const countries = new Set<string>();
@@ -137,7 +170,11 @@ export default function Earth({
     globe.current.pointOfView({ lat: 23, lng: 43, altitude: 2.05 });
     globe.current
       .renderer()
-      .setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+      .setPixelRatio(
+        window.matchMedia("(max-width: 720px)").matches
+          ? 1
+          : Math.min(window.devicePixelRatio, 1.25),
+      );
     globe.current.controls().minDistance = 145;
     globe.current.controls().maxDistance = 500;
     globe.current.controls().enablePan = false;
@@ -187,7 +224,7 @@ export default function Earth({
             correlationIds: events.filter((item) => contains(item.geographicScope.latitude, item.geographicScope.longitude)).map((item) => item.id),
           });
         }}
-        htmlElementsData={[...events, ...worldEvents, ...signals]}
+        htmlElementsData={[...events, ...markerWorldEvents, ...markerSignals]}
         htmlLat={(d) =>
           ("location" in d
             ? (d as WorldEvent).location
@@ -245,7 +282,7 @@ export default function Earth({
           button.onclick = () => onEvent?.(event);
           return button;
         }}
-        ringsData={reducedMotion ? [] : labelSignals}
+        ringsData={reducedMotion || !selected ? [] : [selected]}
         ringLat="latitude"
         ringLng="longitude"
         ringAltitude={0.018}
@@ -279,6 +316,11 @@ export default function Earth({
       {failed && (
         <p className="map-warning">
           {t("Country boundaries unavailable. Explore signals in the feed.")}
+        </p>
+      )}
+      {signals.length + worldEvents.length > MAX_MAP_MARKERS * 2 && (
+        <p className="map-density-note">
+          {t("Showing key markers. All events remain in the feed.")}
         </p>
       )}
       <div className="globe-controls">
