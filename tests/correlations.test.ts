@@ -79,6 +79,12 @@ test("Iran Internet and Brazil fire do not correlate", () => {
   assert.equal(scoreCandidate(a, b).reason, "geographic_mismatch");
   assert.equal(correlate([a, b], { asOf, debug: true }).debug?.comparisons, 0);
 });
+test("an earthquake and a thermal anomaly do not form a Story candidate without contextual evidence", () => {
+  const quake = input("quake", "earthquake");
+  const fire = input("fire", "wildfire");
+  assert.equal(scoreCandidate(quake, fire).reason, "semantic_mismatch");
+  assert.equal(correlate([quake, fire], { asOf }).events.length, 0);
+});
 test("Cloudflare and IODA corroborate only one system", () => {
   const a = input("ioda", "internet"),
     b = input("cloudflare", "internet");

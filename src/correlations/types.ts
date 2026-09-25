@@ -23,6 +23,7 @@ export interface CorrelationFactors {
   severity: number;
   independence: number;
   confidence: number;
+  semantic: number;
 }
 export interface CandidateDecision {
   signalIds: [string, string];

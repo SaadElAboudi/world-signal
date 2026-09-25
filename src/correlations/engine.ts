@@ -17,12 +17,26 @@ const severityValue: Record<Severity, number> = {
   elevated: 0.7,
   significant: 1,
 };
+const semanticCompatibility: Record<string, number> = {
+  "aviation:internet": 1,
+  "earthquake:internet": 0.9,
+  "aviation:earthquake": 0.85,
+  "aviation:wildfire": 0.75,
+  // A satellite thermal cluster and an earthquake can occur near each other
+  // without describing one situation. Require external evidence before a
+  // future causal model is allowed to connect this pair.
+  "earthquake:wildfire": 0,
+};
+function semanticScore(a: CorrelationInput, b: CorrelationInput) {
+  const key = [a.signal.type, b.signal.type].sort().join(":");
+  return semanticCompatibility[key] ?? 0;
+}
 const start = (input: CorrelationInput) =>
   Date.parse(input.signal.startedAt ?? input.signal.timestamp);
 const end = (input: CorrelationInput) =>
   Date.parse(input.endedAt ?? input.signal.timestamp);
 export const CORRELATION_METHOD =
-  "spatiotemporal-v1: geography 30%, temporal proximity 25%, severity 15%, system independence 15%, minimum component confidence 15%; threshold 0.70. Country containment or shared H3 cell; maximum 24-hour onset span. Grouping describes co-occurrence, not causality. Ranking is a heuristic, not scientific certainty.";
+  "spatiotemporal-v2: geography 25%, temporal proximity 20%, severity 10%, system independence 10%, minimum component confidence 15%, semantic compatibility 20%; threshold 0.70. Country containment or shared H3 cell; maximum 24-hour onset span. Incompatible signal pairs are rejected. Grouping describes co-occurrence, not causality. Ranking is a heuristic, not scientific certainty.";
 export function scoreCandidate(
   a: CorrelationInput,
   b: CorrelationInput,
@@ -33,6 +47,7 @@ export function scoreCandidate(
   const ap = providerMetadata(a.providerId),
     bp = providerMetadata(b.providerId);
   const span = Math.abs(start(a) - start(b));
+  const semantic = semanticScore(a, b);
   const independent = Boolean(
     ap &&
     bp &&
@@ -50,13 +65,15 @@ export function scoreCandidate(
       (severityValue[a.signal.severity] + severityValue[b.signal.severity]) / 2,
     independence: independent ? 1 : 0,
     confidence: Math.min(a.signal.confidence, b.signal.confidence),
+    semantic,
   };
   const score =
-    factors.geographic * 0.3 +
-    factors.temporal * 0.25 +
-    factors.severity * 0.15 +
-    factors.independence * 0.15 +
-    factors.confidence * 0.15;
+    factors.geographic * 0.25 +
+    factors.temporal * 0.2 +
+    factors.severity * 0.1 +
+    factors.independence * 0.1 +
+    factors.confidence * 0.15 +
+    factors.semantic * 0.2;
   const reason =
     !Number.isFinite(score) ||
     !Number.isFinite(start(a)) ||
@@ -68,6 +85,8 @@ export function scoreCandidate(
           ? "mixed_provenance"
           : !geography
             ? "geographic_mismatch"
+            : semantic === 0
+              ? "semantic_mismatch"
             : !Number.isFinite(span) || span > windowHours * HOUR
               ? "outside_time_window"
               : !independent
