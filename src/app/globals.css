@@ -1987,15 +1987,14 @@ button svg {
 /* Public live experience: a readable situation feed synchronized with the map. */
 .live-shell {
   min-height: 100dvh;
-  height: 100dvh;
-  display: grid;
-  grid-template-rows: 76px auto auto minmax(0, 1fr);
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   background:
     radial-gradient(circle at 45% 50%, #18303655, transparent 38%),
     #091118;
 }
 .live-topbar {
+  min-height: 76px;
   display: grid;
   grid-template-columns: minmax(250px, 1fr) auto minmax(250px, 1fr);
   align-items: center;
@@ -2136,7 +2135,9 @@ button svg {
 }
 .live-search input::placeholder { color: #637780; }
 .live-workspace {
-  min-height: 0;
+  min-height: 560px;
+  height: clamp(560px, 72dvh, 900px);
+  flex: none;
   display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(350px, 2fr);
 }
@@ -2367,7 +2368,7 @@ button svg {
   .category-chips { gap: 6px; }
   .category-chips button { min-height: 40px; }
   .period-chips { display: none; }
-  .live-workspace { display: flex; flex-direction: column; min-height: 0; }
+  .live-workspace { display: flex; flex-direction: column; min-height: 0; height: auto; }
   .world-feed { order: 1; height: 610px; border-bottom: 1px solid var(--border); }
   .live-map { order: 2; height: 540px; border-right: 0; }
   .mobile-view-feed .live-map,
@@ -2387,4 +2388,34 @@ button svg {
   .health-dialog-header,
   .health-intro,
   .health-source-list { padding-left: 18px; padding-right: 18px; }
+}
+
+/* Visual polish: readable summaries and flexible cards at every width. */
+.developing-stories-list { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.developing-story { border-radius: 12px; padding: 20px; min-width: 0; }
+.developing-story h3 { font-size: 17px; line-height: 1.4; overflow-wrap: anywhere; }
+.developing-story small { font-size: 12px; color: #a1b9b1; }
+.developing-stories-heading { flex-wrap: wrap; align-items: center; }
+.world-feed-card { border-radius: 8px; margin: 4px 0; }
+.world-feed-card h3 { font-size: 15px; line-height: 1.5; }
+.world-feed-card > p { font-size: 12px; color: #a5bac2; }
+.world-feed-card footer { flex-wrap: wrap; gap: 6px 12px; }
+.world-feed-card footer span, .world-feed-card footer small { font-size: 10px; }
+.world-feed-footer { font-size: 11px; line-height: 1.5; }
+.world-now-kicker, .world-feed-heading span { font-size: 10px; }
+.story-list > a, .story-evidence a, .story-signal-list a { border-radius: 10px; min-width: 0; overflow-wrap: anywhere; }
+.story-summary { border-radius: 12px; overflow: hidden; }
+.story-article { overflow-wrap: anywhere; }
+.live-shell :focus-visible, .story-page :focus-visible { outline: 2px solid #8ce0bf; outline-offset: 3px; }
+@media (max-width: 1000px) {
+  .world-now { flex-wrap: wrap; gap: 14px; align-items: start; }
+  .world-now p { white-space: normal; line-height: 1.6; }
+}
+@media (max-width: 760px) {
+  .developing-stories-list { grid-template-columns: minmax(0, 1fr); }
+  .developing-stories-heading { gap: 12px; }
+  .developing-stories-heading > a { min-height: 36px; display: inline-flex; align-items: center; }
+  .developing-story { padding: 16px; }
+  .story-topbar { flex-wrap: wrap; padding-block: 12px; }
+  .world-now p { font-size: 11px; }
 }
