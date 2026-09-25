@@ -20,7 +20,14 @@ export async function synchronizeStories(now = new Date()) {
     let saved = 0;
     for (const row of correlations.rows) {
       const correlation = row.payload as CorrelatedEvent;
-      const investigation = await getPersistedInvestigation("correlated_event", correlation.id, { allowStale: true, now });
+      // Reuse the synchronization connection. The production collector has a
+      // deliberately small pool, so asking the pool for a nested connection
+      // here can starve Context refreshes under load.
+      const context = await client.query(
+        "SELECT investigation FROM context_investigations WHERE subject_type='correlated_event' AND subject_id=$1",
+        [correlation.id],
+      );
+      const investigation = (context.rows[0]?.investigation as Investigation | undefined) ?? null;
       const story = storyFromCorrelation(correlation, investigation, now);
       await client.query(
         `INSERT INTO stories(id,correlation_id,fingerprint,status,explanation_status,started_at,updated_at,resolved_at,payload)
