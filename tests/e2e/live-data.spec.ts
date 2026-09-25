@@ -57,7 +57,7 @@ function fixtureSnapshot(): SignalSnapshot {
 }
 test("live provenance, nullable event baselines, provisional fire references and delayed data remain explicit", async ({
   page,
-}, testInfo) => {
+}) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   let snapshot = fixtureSnapshot();
   await page.route("**/api/signals?*", (route) =>
@@ -93,19 +93,17 @@ test("live provenance, nullable event baselines, provisional fire references and
         : p,
     ),
   };
+  await page.getByRole("button", { name: "6H" }).click();
   await expect(page.getByRole("button", { name: "1/2 sources current" })).toBeVisible();
   await page.getByRole("button", { name: "1/2 sources current" }).click();
   await expect(page.getByText("Refresh temporarily unavailable")).toBeVisible();
   await page.getByRole("button", { name: "Close" }).click();
   await page.route("**/api/signals?*", (route) => route.abort());
+  await page.getByRole("button", { name: "7D" }).click();
   await expect(page.getByRole("button", { name: "0/2 sources current" })).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
-  await page.screenshot({
-    path: `test-results/${testInfo.project.name}-live-state.png`,
-    fullPage: true,
-  });
 });
