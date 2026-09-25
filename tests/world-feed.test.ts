@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { worldFeed, signalFeedEvent } from "../src/events/feed";
+import { compactFeedEvents, worldFeed, signalFeedEvent } from "../src/events/feed";
 import { demoSnapshot } from "../src/providers/demo";
 
 test("world feed includes every observed signal system without leaking demo data", () => {
@@ -29,4 +29,17 @@ test("repeated same-id events do not duplicate the feed", () => {
     provenance: "observed",
   });
   assert.equal(worldFeed([event, event], []).length, 1);
+});
+
+test("repeated fire clusters in one country-hour are compacted without deleting raw signals", () => {
+  const events = [0, 1, 2].map((index) => signalFeedEvent({
+    ...demoSnapshot.signals[0], id: `fire-${index}`, type: "wildfire", provenance: "observed",
+    country: "Brazil", startedAt: "2026-09-25T10:20:00.000Z", timestamp: `2026-09-25T10:2${index}:00.000Z`,
+  }));
+  const compacted = compactFeedEvents(events);
+  assert.equal(compacted.length, 1);
+  assert.equal(compacted[0]?.properties.aggregationCount, 3);
+  assert.equal(compacted[0]?.properties.signalId, "fire-2");
+  assert.match(compacted[0]?.title ?? "", /Brazil/);
+  assert.equal(events.length, 3);
 });

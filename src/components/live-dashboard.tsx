@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SignalSnapshot, WorldSignal } from "@/core/types";
 import type { CorrelatedEvent } from "@/correlations/types";
-import { worldFeed } from "@/events/feed";
+import { compactFeedEvents, worldFeed } from "@/events/feed";
 import type { EventCategory, WorldEvent } from "@/events/types";
 import type { Story } from "@/stories/types";
 import { useI18n, LanguageSwitch } from "@/i18n/context";
@@ -259,7 +259,7 @@ export function LiveDashboard({
   const feed = useMemo<FeedItem[]>(
     () =>
       [
-        ...visibleEvents.map((event) => ({
+        ...compactFeedEvents(visibleEvents).map((event) => ({
           kind: "event" as const,
           event,
           timestamp: event.updatedAt,
@@ -468,8 +468,8 @@ export function LiveDashboard({
                       <span>{typeof item.event.properties.country === "string" ? countryName(item.event.properties.country) : eventLabel(item.event, locale)}</span>
                       <b>{severityLabel(item.event.severity, fr)}</b>
                     </div>
-                    <h3>{item.event.properties.signalId ? signalTitle(snapshot.signals.find((signal) => signal.id === item.event.properties.signalId)!, locale) : item.event.title}</h3>
-                    <p>{item.event.magnitude.value !== null ? `${item.event.magnitude.value.toLocaleString(fr ? "fr-FR" : "en-GB", { maximumFractionDigits: 1 })} ${item.event.magnitude.unit ?? ""}` : item.event.source.name}</p>
+                    <h3>{typeof item.event.properties.aggregationCount === "number" ? item.event.title : item.event.properties.signalId ? signalTitle(snapshot.signals.find((signal) => signal.id === item.event.properties.signalId)!, locale) : item.event.title}</h3>
+                    <p>{typeof item.event.properties.aggregationCount === "number" ? `${item.event.properties.aggregationCount} ${fr ? "clusters d’anomalies" : "anomaly clusters"}` : item.event.magnitude.value !== null ? `${item.event.magnitude.value.toLocaleString(fr ? "fr-FR" : "en-GB", { maximumFractionDigits: 1 })} ${item.event.magnitude.unit ?? ""}` : item.event.source.name}</p>
                     <footer><span>{markerSymbol(eventMarkerKind(item.event))} {eventNature(item.event, fr).toUpperCase()}</span><small>{item.event.source.name}</small></footer>
                   </button>
                 ))}
