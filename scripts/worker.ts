@@ -33,10 +33,15 @@ async function main() {
   let lastMaintenance = 0;
   while (!stopping) {
     let failed = false;
-    const attempt = async (name: string, task: () => Promise<unknown>) => {
+    const attempt = async (
+      name: string,
+      task: () => Promise<unknown>,
+      required = true,
+    ) => {
       try {
         const result = await task();
         if (
+          required &&
           result &&
           typeof result === "object" &&
           "status" in result &&
@@ -45,7 +50,7 @@ async function main() {
           failed = true;
         return result;
       } catch (error) {
-        failed = true;
+        if (required) failed = true;
         log("worker.task.failed", { task: name, code: errorCode(error) });
       }
     };
@@ -148,7 +153,7 @@ async function main() {
           lastAviationRefresh = Date.now();
 
           return aviation;
-        });
+        }, false);
       }
 
       if (
