@@ -21,6 +21,7 @@ import {
 } from "@/core/types";
 import { Icon } from "./icon";
 import type { WorldEvent } from "@/events/types";
+import type { Story } from "@/stories/types";
 import { WorldEventDetail, eventLabel } from "./world-event-detail";
 import { CorrelationDetail } from "./correlation-detail";
 import { SignalDetail } from "./signal-detail";
@@ -75,6 +76,7 @@ function LegacyDashboard({
   snapshot: SignalSnapshot;
   initialEvents?: WorldEvent[];
   initialEventsAvailable?: boolean;
+  initialStories?: Story[];
 }) {
   const { t, locale, countryName } = useI18n();
   const [snapshot, setSnapshot] = useState(initialSnapshot);
@@ -1195,6 +1197,7 @@ export default function Dashboard(props: {
   snapshot: SignalSnapshot;
   initialEvents?: WorldEvent[];
   initialEventsAvailable?: boolean;
+  initialStories?: Story[];
 }) {
   if (props.snapshot.mode === "live") return <LiveDashboard {...props} />;
   return <LegacyDashboard {...props} />;

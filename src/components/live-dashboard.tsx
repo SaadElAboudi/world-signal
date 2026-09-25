@@ -7,6 +7,7 @@ import type { SignalSnapshot, WorldSignal } from "@/core/types";
 import type { CorrelatedEvent } from "@/correlations/types";
 import { worldFeed } from "@/events/feed";
 import type { EventCategory, WorldEvent } from "@/events/types";
+import type { Story } from "@/stories/types";
 import { useI18n, LanguageSwitch } from "@/i18n/context";
 import { signalTitle } from "@/i18n/signals";
 import { eventLabel } from "./world-event-detail";
@@ -121,16 +122,19 @@ export function LiveDashboard({
   snapshot: initialSnapshot,
   initialEvents = [],
   initialEventsAvailable = false,
+  initialStories = [],
 }: {
   snapshot: SignalSnapshot;
   initialEvents?: WorldEvent[];
   initialEventsAvailable?: boolean;
+  initialStories?: Story[];
 }) {
   const { locale, countryName } = useI18n();
   const fr = locale === "fr";
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [events, setEvents] = useState(initialEvents);
   const [eventsAvailable, setEventsAvailable] = useState(initialEventsAvailable);
+  const [stories, setStories] = useState(initialStories);
   const [hours, setHours] = useState(24);
   const [category, setCategory] = useState<EventCategory | null>(null);
   const [mapMarker, setMapMarker] = useState<MapMarkerKind>("all");
@@ -201,6 +205,23 @@ export function LiveDashboard({
       window.clearInterval(timer);
     };
   }, [hours]);
+
+  useEffect(() => {
+    const abort = new AbortController();
+    const refresh = async () => {
+      try {
+        const response = await fetch("/api/stories?limit=6", { signal: abort.signal, cache: "no-store" });
+        if (!response.ok) throw new Error("stories_unavailable");
+        const result = await response.json();
+        if (Array.isArray(result.stories)) setStories(result.stories);
+      } catch {
+        // Keep the last successful set of stories visible.
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    return () => { abort.abort(); window.clearInterval(timer); };
+  }, []);
 
   const asOfMs = Date.parse(snapshot.asOf);
   const allEvents = useMemo(() => worldFeed(events, snapshot.signals), [events, snapshot.signals]);
@@ -332,6 +353,11 @@ export function LiveDashboard({
           {fr ? "Actualisé à" : "Updated at"} {new Date(snapshot.asOf).toISOString().slice(11, 16)} UTC
         </p>
       </section>
+
+      {stories.length > 0 && <section className="developing-stories" aria-label={fr ? "Situations en cours" : "Developing stories"}>
+        <div className="developing-stories-heading"><div><span>{fr ? "SITUATIONS EN COURS" : "DEVELOPING SITUATIONS"}</span><h2>{fr ? "Ce qui mérite votre attention" : "What needs attention"}</h2></div><Link href="/stories">{fr ? "Toutes les Stories →" : "All stories →"}</Link></div>
+        <div className="developing-stories-list">{stories.slice(0, 3).map((story) => <Link key={story.id} href={`/stories/${encodeURIComponent(story.id)}`} className={`developing-story developing-story-${story.status}`}><span>{countryName(story.location.country ?? "Offshore / unassigned")}</span><h3>{story.title}</h3><p>{story.status === "unexplained" ? (fr ? "Aucune explication trouvée pour le moment" : "No explanation found yet") : story.status === "corroborated" ? (fr ? "Contexte recoupé" : "Context corroborated") : (fr ? "En cours d’évaluation" : "Under assessment")}</p><small>{story.signalTypes.join(" + ")} · {story.signalIds.length} {fr ? "signaux" : "signals"}</small></Link>)}</div>
+      </section>}
 
       <div className="mobile-primary-tabs" role="tablist" aria-label={fr ? "Vue principale" : "Primary view"}>
         {([
