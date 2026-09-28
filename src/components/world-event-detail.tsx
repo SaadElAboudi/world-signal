@@ -25,6 +25,8 @@ export const eventNames: Record<string, [string, string]> = {
   ],
   marine_heatwave: ["Marine heatwave", "Vague de chaleur marine"],
   power_grid_anomaly: ["Power grid anomaly", "Anomalie du réseau électrique"],
+  tsunami: ["Tsunami alert", "Alerte tsunami"],
+  geomagnetic_storm: ["Geomagnetic storm", "Tempête géomagnétique"],
   other: ["Reported event", "Événement signalé"],
 };
 export function eventLabel(event: WorldEvent, locale: string) {

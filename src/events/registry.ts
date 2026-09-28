@@ -13,6 +13,26 @@ export interface EventSourceMetadata {
 
 export const EVENT_SOURCE_REGISTRY: readonly EventSourceMetadata[] = [
   {
+    id: "noaa-tsunami",
+    name: "NOAA Tsunami Warning Centers",
+    categories: ["natural_hazard"],
+    types: ["tsunami"],
+    cadenceMinutes: 15,
+    retention: "event_state",
+    operational: true,
+    sourceUrl: "https://www.tsunami.gov/?page=productRetrieval",
+  },
+  {
+    id: "noaa-swpc",
+    name: "NOAA Space Weather Prediction Center",
+    categories: ["earth_observation"],
+    types: ["geomagnetic_storm"],
+    cadenceMinutes: 15,
+    retention: "event_state",
+    operational: true,
+    sourceUrl: "https://services.swpc.noaa.gov/products/alerts.json",
+  },
+  {
     id: "eonet",
     name: "NASA EONET",
     categories: ["natural_hazard", "climate", "environment"],

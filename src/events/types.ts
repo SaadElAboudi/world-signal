@@ -24,6 +24,7 @@ export type EventType =
   | "high_wind"
   | "heavy_rain"
   | "tsunami"
+  | "geomagnetic_storm"
   | "power_outage"
   | "power_grid_anomaly"
   | "internet_outage"

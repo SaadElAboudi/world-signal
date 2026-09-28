@@ -41,6 +41,7 @@ export function eventMarkerKind(event: WorldEvent): MapMarkerKind {
   if (event.type === "wildfire") return "fire";
   if (["marine_heatwave", "water_anomaly", "sea_lake_ice"].includes(event.type)) return "ocean";
   if (["internet_outage", "power_grid_anomaly"].includes(event.type)) return "network";
+  if (event.type === "geomagnetic_storm") return "other";
   if (event.type === "aviation_disruption") return "aviation";
   if (event.category === "climate") return "weather";
   return "other";

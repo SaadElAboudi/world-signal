@@ -8,6 +8,8 @@ import { EonetEventProvider } from "../events/providers/eonet";
 import { OpenMeteoExtremeWeatherProvider } from "../events/providers/open-meteo";
 import { OpenMeteoMarineProvider } from "../events/providers/open-meteo-marine";
 import { IodaInternetOutageProvider } from "../events/providers/ioda";
+import { NoaaSpaceWeatherProvider } from "../events/providers/noaa-space-weather";
+import { NoaaTsunamiProvider } from "../events/providers/noaa-tsunami";
 import { getPool } from "../database/client";
 import { enrichWeatherWithClimatology } from "./climate";
 import { collectionGuard, type BudgetedProvider } from "./resource-budget";
@@ -157,6 +159,8 @@ export async function refreshInternetWorldEvents(options: RefreshOptions = {}) {
     limit: options.limit ?? 1000,
   });
 }
+export async function refreshTsunamiWorldEvents(options: RefreshOptions = {}) { return refreshProvider(new NoaaTsunamiProvider(), options, true); }
+export async function refreshSpaceWeatherWorldEvents(options: RefreshOptions = {}) { return refreshProvider(new NoaaSpaceWeatherProvider(), options, true); }
 
 export async function refreshAllWorldEvents(options: RefreshOptions = {}) {
   const results = [];
@@ -167,6 +171,8 @@ export async function refreshAllWorldEvents(options: RefreshOptions = {}) {
     ],
     ["open-meteo", () => refreshWeatherWorldEvents(options)],
     ["ioda", () => refreshInternetWorldEvents(options)],
+    ["noaa-tsunami", () => refreshTsunamiWorldEvents(options)],
+    ["noaa-swpc", () => refreshSpaceWeatherWorldEvents(options)],
   ] as const) {
     try {
       results.push(await refresh());
