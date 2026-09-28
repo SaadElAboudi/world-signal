@@ -25,3 +25,8 @@ test("NOAA tsunami feed excludes information statements and retains official war
   assert.equal(events[0].severity, "significant");
   assert.equal(events[0].location.latitude, 3);
 });
+
+test("an information bulletin mentioning a warning is still excluded", async () => {
+  const xml = `<feed><entry><id>info</id><title>Information</title><updated>2026-09-28T01:00:00Z</updated><geo:lat>1</geo:lat><geo:long>2</geo:long><summary type="xhtml"><div><strong>Category:</strong> Information<br/>There is NO tsunami warning.</div></summary></entry></feed>`;
+  assert.equal((await new NoaaTsunamiProvider(response(xml)).fetchEvents()).length, 0);
+});

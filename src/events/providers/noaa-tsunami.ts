@@ -12,7 +12,10 @@ export class NoaaTsunamiProvider implements EventProvider {
     const { text } = await fetchText(this.endpoint, { fetcher: this.fetcher, attempts: 2, timeoutMs: 15_000 });
     const now = options.now ?? new Date(), output: WorldEvent[] = [];
     for (const entry of text.match(/<entry>[\s\S]*?<\/entry>/gi) ?? []) {
-      const summary = decode(tag(entry, "summary") ?? ""), category = /Category:\s*([^<\n]+)/i.exec(summary)?.[1] ?? "";
+      const rawSummary = tag(entry, "summary") ?? "";
+      // Preserve the field boundary before stripping HTML. The bulletin body
+      // can itself mention "warning" while the category is Information.
+      const category = /Category:\s*(?:<\/strong>)?\s*([^<\n]+)/i.exec(rawSummary)?.[1]?.trim() ?? "";
       const level = severity(category), updated = tag(entry, "updated"), title = decode(tag(entry, "title") ?? "Tsunami bulletin");
       const latitude = Number(tag(entry, "geo:lat")), longitude = Number(tag(entry, "geo:long"));
       if (!level || !updated || !Number.isFinite(Date.parse(updated)) || !Number.isFinite(latitude) || !Number.isFinite(longitude)) continue;
