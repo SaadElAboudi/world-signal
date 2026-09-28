@@ -3,6 +3,7 @@ import type { WorldSignal } from "../core/types";
 import { getPool } from "../database/client";
 import { activityAssessment } from "../signals/activity";
 import { assessSignal } from "../signals/assessment";
+import { providerWideAnomaly } from "../signals/provider-wide-guard";
 import { errorCode, log } from "./log";
 export function rowObservation(row: Record<string, unknown>): Observation {
   return {
@@ -68,15 +69,30 @@ export async function computeActivitySignals(now = new Date()) {
           [provider],
         )
       ).rows.map((r) => r.payload as WorldSignal);
+      const assessments = [...byScope.entries()].map(([scope, observations]) => ({
+        scope,
+        observations,
+        assessment: activityAssessment(observations.at(-1)!, observations, now),
+      }));
+      const providerWide = providerWideAnomaly({
+        assessedCountries: assessments.filter((item) => item.assessment.eligible).length,
+        anomalousCountries: assessments.filter((item) => item.assessment.signal).length,
+      });
+      if (providerWide.suppressed)
+        log("activity.provider_wide_suppressed", {
+          provider,
+          assessedCountries: assessments.filter((item) => item.assessment.eligible).length,
+          anomalousCountries: assessments.filter((item) => item.assessment.signal).length,
+          affectedFraction: Number(providerWide.affectedFraction.toFixed(3)),
+        });
       await client.query("BEGIN");
       try {
-        for (const [scope, observations] of byScope) {
+        for (const { scope, observations, assessment } of assessments) {
           const current = observations.at(-1)!;
-          const assessment = activityAssessment(current, observations, now);
           if (!assessment.eligible) continue;
           const prior = previous.find((s) => s.scopeKey === scope);
           let signal: WorldSignal | undefined;
-          if (assessment.signal) {
+          if (assessment.signal && !providerWide.suppressed) {
             signal = {
               ...assessment.signal,
               ...(prior
@@ -87,7 +103,7 @@ export async function computeActivitySignals(now = new Date()) {
                   }
                 : {}),
             };
-          } else if (prior && prior.timestamp !== current.timestamp) {
+          } else if (!providerWide.suppressed && prior && prior.timestamp !== current.timestamp) {
             signal = {
               ...prior,
               updatedAt: now.toISOString(),
